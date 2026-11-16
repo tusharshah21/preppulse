@@ -186,7 +186,21 @@ function summary() {
   console.log(VIDEO
     ? `Playing ${path.basename(VIDEO)} to its end (cap ${SECONDS} s)...`
     : `Measuring for ${SECONDS} s. Sit comfortably and look at the camera...`);
-  await Promise.race([new Promise((r) => setTimeout(r, SECONDS * 1000)), ended]);
+  // Video only: give up if 60 s of video pass after the first frame without the
+  // SDK reaching kRunning (it waits there while a positioning hint is active).
+  const STUCK_S = Number(process.env.PROBE_STUCK_SECONDS) || 60;
+  const stuck = new Promise((r) => {
+    if (!VIDEO) return;
+    const iv = setInterval(() => {
+      if (tRunning != null) { clearInterval(iv); return; }
+      if (frames.count && performance.now() - frames.firstWall > STUCK_S * 1000) {
+        clearInterval(iv);
+        console.log(`Stopped: no kRunning after ${STUCK_S} s of video (still on a positioning hint).`);
+        r();
+      }
+    }, 1000);
+  });
+  await Promise.race([new Promise((r) => setTimeout(r, SECONDS * 1000)), ended, stuck]);
   await stopSession(sdk);
   console.log(summary());
   const dir = path.join(ROOT, 'data', 'recordings');

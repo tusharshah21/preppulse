@@ -1,0 +1,20 @@
+{
+  "name": "preppulse",
+  "version": "0.1.0",
+  "description": "Mock-test practice with on-device pulse and breathing feedback",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "install-electron",
+    "probe": "node scripts/probe.js",
+    "test": "node test/selfcheck.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@smartspectra/node-sdk": "^3.5.0"
+  },
+  "devDependencies": {
+    "electron": "45.3.3"
+  },
+  "private": true
+}

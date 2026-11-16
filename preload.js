@@ -2,14 +2,20 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-const channels = ['vitals:status', 'vitals:validation', 'vitals:error', 'vitals:metrics', 'vitals:frame'];
+const channels = ['vitals:status', 'vitals:validation', 'vitals:error', 'vitals:metrics', 'vitals:frame',
+  'measure:state', 'calib:state', 'calib:done', 'test:ended', 'test:saved'];
 
 contextBridge.exposeInMainWorld('vitals', {
+  info: () => ipcRenderer.invoke('app:info'),
   start: () => ipcRenderer.invoke('vitals:start'),
   stop: () => ipcRenderer.invoke('vitals:stop'),
   setPreview: (on) => ipcRenderer.invoke('vitals:preview', on === true),
+  startCalibration: () => ipcRenderer.invoke('calib:start'),
   getBaseline: () => ipcRenderer.invoke('baseline:get'),
-  saveBaseline: (samples) => ipcRenderer.invoke('baseline:save', samples),
+  getQuestions: () => ipcRenderer.invoke('questions:get'),
+  startTest: (opts) => ipcRenderer.invoke('test:start', opts),
+  testEvent: (e) => ipcRenderer.invoke('test:event', e),
+  endTest: (reason) => ipcRenderer.invoke('test:end', reason),
   dataInfo: () => ipcRenderer.invoke('data:info'),
   deleteAllData: () => ipcRenderer.invoke('data:deleteAll'),
   on: (channel, cb) => {

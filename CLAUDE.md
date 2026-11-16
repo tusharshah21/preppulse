@@ -18,25 +18,39 @@ A desktop app (Electron + Node.js) for students preparing for high-stakes exams 
 ## Architecture
 
 - `lib/vitals.js`: the only place that talks to the SDK (`startSession`, `stopSession`). Native camera capture in the main process (`useCamera`), so the API key never reaches the renderer. Turns each metrics packet into a plain-number payload (`toPayload`: pulse, breathing, hrv, trace). Also `downscaleToRGBA` for the preview. `lib/videofeed.js`: dev-only video input, ffmpeg decodes a file to raw RGB on a pipe and each frame goes to `sendFrame()` (custom input), then is dropped.
-- `lib/recording.js`: recorder and replay of the four IPC event channels (`vitals:status`, `vitals:validation`, `vitals:error`, `vitals:metrics`). Recordings are numeric only. Replay loops at real speed and shifts timestamps each pass.
-- `lib/baseline.js`: median-based calm baseline from calibration samples.
-- `main.js`: window, IPC handlers, live vs replay switch, preview throttling, baseline storage, delete-all-data.
+- `lib/recording.js`: recorder and replay of the four IPC event channels (`vitals:status`, `vitals:validation`, `vitals:error`, `vitals:metrics`). Recordings are numeric only. `loadRecording` returns `{ events, meta }`. Replay loops at real speed and rebases sample timestamps so the recording's `createdAt` maps to the moment play starts (plus one pass length per loop), which keeps replayed samples on the same clock as `Date.now()`.
+- `lib/config.js`: every tunable threshold (calibration, test lengths, late-sample grace, coverage). Retune after the live session.
+- `lib/calibration.js`: adaptive calibration, a pure state machine driven with explicit times (see "Calibration" below). `lib/intervals.js`: gap tracker and interval maths. `lib/baseline.js`: median-based calm baseline from the collected samples.
+- `lib/questions.js`: loads and validates `questions/*.json` (format in `questions/README.md`); `publicView` strips the answers, which never reach the window.
+- `lib/session.js`: one mock-test session (event log, samples, pauses on one clock); `lib/align.js`: question windows, per-question coverage, final answers.
+- `main.js`: window, IPC handlers, live vs replay switch, preview throttling, the 250 ms monitor tick (calm indicator, calibration, test timer), baseline and session storage, delete-all-data. Every SDK event is stamped on arrival with `Date.now()` and passed to the active calibration or test session.
 - `preload.js`: exposes `window.vitals` via `contextBridge`.
-- `index.html` + `renderer.js`: consent, home, calibration, settings screens. No Node access (`contextIsolation`, `sandbox`). All renderer permission requests are denied.
+- `index.html` + `renderer.js`: consent, home, calibration, "Before you begin", test (CBT layout), end, settings screens. No Node access (`contextIsolation`, `sandbox`). All renderer permission requests are denied. Renderer test events are validated in `lib/session.js` (trust boundary).
+- The camera session stays on from calibration through the test (restarting would repeat the ~1 minute warm-up) and turns off after the test is saved, or on Back/Stop.
 - Preview frames: `videoOutput` (1280x720 RGB) is downscaled in main to ~320 px, throttled to ~10 fps, sent on `vitals:frame` only while the renderer has preview on. Never recorded, logged, or written to disk.
-- Storage: `app.getPath('userData')/preppulse-data/baseline.json` (latest calm baseline). Delete all data removes that folder and clears Chromium storage for the app session. Dev recordings live in `data/recordings/` (gitignored, project folder, not user data).
+- Storage: `app.getPath('userData')/preppulse-data/baseline.json` (latest calm baseline) and `preppulse-data/sessions/<startedAt>.json` (one file per mock test). Delete all data removes that folder (baseline and sessions) and clears Chromium storage for the app session. Dev recordings live in `data/recordings/` (gitignored, project folder, not user data).
+- Session file (`preppulse-session/1`): all times are ms since test start. `events` (test_start, question_shown with `onScreenMs`, answer_selected/changed/cleared, marked_for_review, skipped, navigate, test_end), `questions` (time, answer, correctness, measured ms, coverage full/partial/none/not_shown, reasons), `coverage` (counts, based on pulse because breathing readings are too sparse to judge one question), `gaps.pauses` (validation/error pauses) and `gaps.noStableReading` (spacing between stable samples above `coverage.*MaxSpacingSeconds`), `samples` (`[t, value, confidence, stable, question]` for pulse, breathing, HRV), `breathingTrace`, `baseline` used, `settings`, `source` (`mode`, `simulated`). Correctness is computed only at the end, in main.
+- Simulated data: `npm run simulate` writes `data/recordings/simulated-test-session.json` (made up, `"simulated": true`, about 13 min: warm-up, calm, three pulse rises with recovery, two `kChestNotVisible` gaps). Replaying it shows a "SIMULATED DATA" banner on every screen, and the session and baseline files carry `simulated: true`; a simulated baseline is ignored outside simulated replay. Never use simulated data in the demo video or the DEV post.
 - Env (dev/testing only; with none set the app uses the live camera, which the final app and demo must use):
   - `PREPPULSE_REPLAY=<recording.json>`: replays a recording, no camera, no SDK, no credits. Wins over `PREPPULSE_VIDEO`.
   - `PREPPULSE_VIDEO=<file>`: plays a video file instead of the camera: ffmpeg decodes it at its native frame rate (`-re`) and frames go to the SDK's custom input. Any format ffmpeg reads works (the dataset AVIs play as-is, no conversion). Same consent screen, IPC events and recorder. Uses the API key and network like a live session.
   - `PREPPULSE_FFMPEG=<path to ffmpeg.exe>`: optional; default is `ffmpeg`/`ffprobe` on PATH (installed here via winget, ffmpeg 9.0.1).
   - `PREPPULSE_RECORD=1`: saves live or file sessions to `data/recordings/`.
 - Test videos live only in `data/videos/` (gitignored). Never commit them, and never copy or extract frames from them anywhere else.
-- Run: `npm install`, copy `.env.example` to `.env`, `npm start`. Probe: `npm run probe` (camera, `PROBE_SECONDS`), `npm run probe -- --video data/videos/<file> [--out <name>]` (file, plays to its end). Self-check: `npm test`.
+- Run: `npm install`, copy `.env.example` to `.env`, `npm start`. Probe: `npm run probe` (camera, `PROBE_SECONDS`), `npm run probe -- --video data/videos/<file> [--out <name>]` (file, plays to its end). Tests: `npm test` (`node --test`: `test/*.js`, synthetic inputs and the simulated recording on a virtual clock).
 - Setting the env vars on Windows. In cmd, quote the whole assignment, or the space before `&&` ends up in the path:
   - cmd: `set "PREPPULSE_VIDEO=data\videos\chest-visible.mp4" && npm start`
   - PowerShell: `$env:PREPPULSE_VIDEO = "data\videos\chest-visible.mp4"; npm start` (stays set for the rest of that window; clear with `Remove-Item Env:PREPPULSE_VIDEO`)
   - Git Bash: `PREPPULSE_VIDEO=data/videos/chest-visible.mp4 npm start`
   - The same forms apply to `PREPPULSE_REPLAY`, `PREPPULSE_RECORD` and `PREPPULSE_FFMPEG`.
+
+## Calibration (adaptive, `lib/calibration.js`, thresholds in `lib/config.js`)
+
+- Warm-up: wait until pulse and breathing have each been stable once. Hint "Getting ready, about a minute"; after `warmupHintSlowSeconds` a gentler "still getting ready" hint; after `warmupMaxSeconds` stop without saving.
+- Then count calm seconds for pulse and breathing separately: a tick counts for a signal if the position is OK and a stable sample of that signal arrived within its freshness window (`pulseFreshSeconds`, `breathingFreshSeconds`). Done when both reach `minCalmSeconds` and there are at least `minBreathingReadings` stable breathing readings. Sparse breathing extends calibration up to `maxCalibrationSeconds`, then what was measured is saved with an honest note.
+- HRV samples count only after `hrvContinuousOkSeconds` of continuous OK position. If none, the baseline stores `hrvRmssdMs: null` ("not enough data yet"); HRV never extends calibration.
+- Pauses (non-OK validation, SDK errors) stop counting and are stored in the baseline as gaps with reasons. Only samples collected while measuring go into the medians.
+- Status of these thresholds: first guesses. Confirm in the live session (planned around 20 to 21 Nov), which will also be used to record the demo.
 
 ## SmartSpectra SDK facts (`@smartspectra/node-sdk` 3.5.0, checked 2026-11-16)
 

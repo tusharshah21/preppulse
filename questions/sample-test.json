@@ -1,0 +1,102 @@
+{
+  "format": "preppulse-questions/1",
+  "title": "Sample practice test",
+  "questions": [
+    {
+      "id": "phy-1",
+      "subject": "Physics",
+      "difficulty": "easy",
+      "text": "A ball is thrown straight up at 20 m/s. Taking g = 10 m/s² and ignoring air resistance, how high does it rise above the point of release?",
+      "options": ["10 m", "20 m", "40 m", "80 m"],
+      "answer": 1
+    },
+    {
+      "id": "chem-1",
+      "subject": "Chemistry",
+      "difficulty": "easy",
+      "text": "How many moles of carbon dioxide are in 22 g of CO₂? (C = 12, O = 16)",
+      "options": ["0.25 mol", "0.5 mol", "1 mol", "2 mol"],
+      "answer": 1
+    },
+    {
+      "id": "math-1",
+      "subject": "Mathematics",
+      "difficulty": "easy",
+      "text": "What is the smallest value of x² − 4x + 7 for real x?",
+      "options": ["2", "3", "4", "7"],
+      "answer": 1
+    },
+    {
+      "id": "apt-1",
+      "subject": "Aptitude",
+      "difficulty": "easy",
+      "text": "What comes next in the series 2, 6, 12, 20, 30, ...?",
+      "options": ["38", "40", "42", "44"],
+      "answer": 2
+    },
+    {
+      "id": "phy-2",
+      "subject": "Physics",
+      "difficulty": "medium",
+      "text": "A 6 Ω resistor and a 3 Ω resistor are connected in parallel across an ideal 12 V battery. What current does the battery supply?",
+      "options": ["1.33 A", "2 A", "4 A", "6 A"],
+      "answer": 3
+    },
+    {
+      "id": "chem-2",
+      "subject": "Chemistry",
+      "difficulty": "medium",
+      "text": "What is the hybridisation of each carbon atom in ethyne (C₂H₂)?",
+      "options": ["sp", "sp²", "sp³", "sp³d"],
+      "answer": 0
+    },
+    {
+      "id": "apt-2",
+      "subject": "Aptitude",
+      "difficulty": "medium",
+      "text": "A 150 m long train passes a pole in 10 seconds. At the same speed, how long does it take to cross a 300 m long platform completely?",
+      "options": ["20 s", "25 s", "30 s", "45 s"],
+      "answer": 2
+    },
+    {
+      "id": "apt-3",
+      "subject": "Aptitude",
+      "difficulty": "medium",
+      "text": "What is the smaller angle between the hour hand and the minute hand of a clock at 3:40?",
+      "options": ["120°", "130°", "140°", "150°"],
+      "answer": 1
+    },
+    {
+      "id": "phy-3",
+      "subject": "Physics",
+      "difficulty": "hard",
+      "text": "A capacitor charged to a voltage V is connected across an identical, uncharged capacitor. After charge stops flowing, what fraction of the original stored energy has been lost?",
+      "options": ["None", "One quarter", "One half", "Three quarters"],
+      "answer": 2
+    },
+    {
+      "id": "chem-3",
+      "subject": "Chemistry",
+      "difficulty": "hard",
+      "text": "50 mL of 0.2 M HCl is mixed with 50 mL of 0.1 M NaOH. What is the pH of the resulting solution? (log 2 = 0.30)",
+      "options": ["1.0", "1.3", "2.0", "7.0"],
+      "answer": 1
+    },
+    {
+      "id": "math-2",
+      "subject": "Mathematics",
+      "difficulty": "hard",
+      "text": "Two fair six-sided dice are rolled. What is the probability that the sum of the two numbers is a prime number?",
+      "options": ["1/3", "5/12", "1/2", "7/18"],
+      "answer": 1
+    },
+    {
+      "id": "math-3",
+      "subject": "Mathematics",
+      "difficulty": "hard",
+      "text": "In how many distinct ways can the letters of the word LEVEL be arranged so that the two E's are not next to each other?",
+      "options": ["12", "18", "24", "30"],
+      "answer": 1
+    }
+  ]
+}

@@ -97,10 +97,11 @@ function tick() {
     collectLatest();
     cal.seconds = Math.min(CAL_SECONDS, cal.seconds + dt);
     $('hint').textContent = 'Measuring. Keep breathing normally.';
+  } else if (latest.ok === false) {
+    // The SDK stays in kStarting until this is fixed, so the hint comes first.
+    $('hint').textContent = `Paused: ${latest.hint || 'looking for your face'}`;
   } else if (latest.status !== 'kRunning') {
     $('hint').textContent = 'Starting camera...';
-  } else if (!latest.ok) {
-    $('hint').textContent = `Paused: ${latest.hint || 'looking for your face'}`;
   } else {
     $('hint').textContent = 'Good position. Hold still while the readings settle...';
   }

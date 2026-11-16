@@ -24,6 +24,9 @@ const VIDEO = arg('--video') && path.resolve(arg('--video'));
 const OUT = arg('--out');
 if (OUT && !/^[\w.-]+$/.test(OUT)) { console.error('--out must be a plain file name'); process.exit(1); }
 const SECONDS = Number(process.env.PROBE_SECONDS) || (VIDEO ? 600 : 45);
+// --metrics 15,16,17 overrides the app's metric list for this probe (never 11 or 14).
+const METRICS = arg('--metrics') ? arg('--metrics').split(',').map(Number) : REQUESTED_METRICS;
+if (METRICS.some((m) => !Number.isInteger(m) || m === 11 || m === 14)) { console.error('--metrics: integers only, never 11 or 14'); process.exit(1); }
 let endOfFile;
 const ended = new Promise((r) => { endOfFile = r; });
 let sawStarting = false;
@@ -36,7 +39,7 @@ const stats = (xs) => {
 };
 const secs = (ms) => (ms == null ? 'never' : `${(ms / 1000).toFixed(1)} s`);
 
-const recorder = createRecorder({ source: 'probe', input: VIDEO ? 'file' : 'camera', requestedMetrics: REQUESTED_METRICS });
+const recorder = createRecorder({ source: 'probe', input: VIDEO ? 'file' : 'camera', requestedMetrics: METRICS });
 const statuses = [];
 const validation = new Map(); // code -> { count, hint }
 const errors = [];
@@ -118,7 +121,7 @@ function summary() {
   const lines = [];
   const n = packets.length;
   lines.push(`Input: ${VIDEO ? `file ${path.basename(VIDEO)}` : 'camera'}`);
-  lines.push(`Session: ${SECONDS} s cap, metrics ${JSON.stringify(REQUESTED_METRICS)}, telemetry off`);
+  lines.push(`Session: ${SECONDS} s cap, metrics ${JSON.stringify(METRICS)}, telemetry off`);
   lines.push(`Statuses: ${statuses.join(', ')}`);
   lines.push(`Errors: ${errors.length ? errors.join(' | ') : 'none'}`);
   lines.push('Validation codes seen:');
@@ -178,7 +181,7 @@ function summary() {
   t0 = performance.now();
   let sdk;
   try {
-    sdk = await startSession({ apiKey, emit, onFrame, onRaw, videoPath: VIDEO });
+    sdk = await startSession({ apiKey, emit, onFrame, onRaw, videoPath: VIDEO, requestedMetrics: METRICS });
   } catch (e) {
     console.error(`start() failed: ${e.codeName}: ${e.message}`);
     process.exit(1);
@@ -186,16 +189,18 @@ function summary() {
   console.log(VIDEO
     ? `Playing ${path.basename(VIDEO)} to its end (cap ${SECONDS} s)...`
     : `Measuring for ${SECONDS} s. Sit comfortably and look at the camera...`);
-  // Video only: give up if 60 s of video pass after the first frame without the
-  // SDK reaching kRunning (it waits there while a positioning hint is active).
+  // Video only: give up if 60 s of video pass after the first frame without a
+  // single metrics packet (a positioning hint is blocking measurement). kRunning
+  // is not a usable signal: with custom input it arrives even while blocked.
   const STUCK_S = Number(process.env.PROBE_STUCK_SECONDS) || 60;
   const stuck = new Promise((r) => {
     if (!VIDEO) return;
     const iv = setInterval(() => {
-      if (tRunning != null) { clearInterval(iv); return; }
+      if (packets.length) { clearInterval(iv); return; }
       if (frames.count && performance.now() - frames.firstWall > STUCK_S * 1000) {
         clearInterval(iv);
-        console.log(`Stopped: no kRunning after ${STUCK_S} s of video (still on a positioning hint).`);
+        const top = [...validation].sort((a, b) => b[1].count - a[1].count)[0];
+        console.log(`Stopped: no metrics after ${STUCK_S} s of video (mostly ${top?.[0]}: "${top?.[1].hint}").`);
         r();
       }
     }, 1000);

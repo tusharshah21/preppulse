@@ -17,7 +17,7 @@ A desktop app (Electron + Node.js) for students preparing for high-stakes exams 
 
 ## Architecture
 
-- `lib/vitals.js`: the only place that talks to the SDK (`startSession`, `stopSession`). Native camera capture in the main process (`useCamera`), so the API key never reaches the renderer. Turns each metrics packet into a plain-number payload (`toPayload`: pulse, breathing, hrv, trace). Also `downscaleToRGBA` for the preview.
+- `lib/vitals.js`: the only place that talks to the SDK (`startSession`, `stopSession`). Native camera capture in the main process (`useCamera`), so the API key never reaches the renderer. Turns each metrics packet into a plain-number payload (`toPayload`: pulse, breathing, hrv, trace). Also `downscaleToRGBA` for the preview. `lib/videofeed.js`: dev-only video input, ffmpeg decodes a file to raw RGB on a pipe and each frame goes to `sendFrame()` (custom input), then is dropped.
 - `lib/recording.js`: recorder and replay of the four IPC event channels (`vitals:status`, `vitals:validation`, `vitals:error`, `vitals:metrics`). Recordings are numeric only. Replay loops at real speed and shifts timestamps each pass.
 - `lib/baseline.js`: median-based calm baseline from calibration samples.
 - `main.js`: window, IPC handlers, live vs replay switch, preview throttling, baseline storage, delete-all-data.
@@ -27,8 +27,8 @@ A desktop app (Electron + Node.js) for students preparing for high-stakes exams 
 - Storage: `app.getPath('userData')/preppulse-data/baseline.json` (latest calm baseline). Delete all data removes that folder and clears Chromium storage for the app session. Dev recordings live in `data/recordings/` (gitignored, project folder, not user data).
 - Env (dev/testing only; with none set the app uses the live camera, which the final app and demo must use):
   - `PREPPULSE_REPLAY=<recording.json>`: replays a recording, no camera, no SDK, no credits. Wins over `PREPPULSE_VIDEO`.
-  - `PREPPULSE_VIDEO=<file>`: plays a video file through the SDK with `useFile()` instead of the camera. Same consent screen, IPC events and recorder. Uses the API key and network like a live session.
-  - `PREPPULSE_VIDEO_DELAY_MS` (default 33): delay between file frames. Only changes playback speed; 0 = as fast as possible.
+  - `PREPPULSE_VIDEO=<file>`: plays a video file instead of the camera: ffmpeg decodes it at its native frame rate (`-re`) and frames go to the SDK's custom input. Any format ffmpeg reads works (the dataset AVIs play as-is, no conversion). Same consent screen, IPC events and recorder. Uses the API key and network like a live session.
+  - `PREPPULSE_FFMPEG=<path to ffmpeg.exe>`: optional; default is `ffmpeg`/`ffprobe` on PATH (installed here via winget, ffmpeg 9.0.1).
   - `PREPPULSE_RECORD=1`: saves live or file sessions to `data/recordings/`.
 - Test videos live only in `data/videos/` (gitignored). Never commit them, and never copy or extract frames from them anywhere else.
 - Run: `npm install`, copy `.env.example` to `.env`, `npm start`. Probe: `npm run probe` (camera, `PROBE_SECONDS`), `npm run probe -- --video data/videos/<file> [--out <name>]` (file, plays to its end). Self-check: `npm test`.
@@ -36,7 +36,7 @@ A desktop app (Electron + Node.js) for students preparing for high-stakes exams 
   - cmd: `set "PREPPULSE_VIDEO=data\videos\chest-visible.mp4" && npm start`
   - PowerShell: `$env:PREPPULSE_VIDEO = "data\videos\chest-visible.mp4"; npm start` (stays set for the rest of that window; clear with `Remove-Item Env:PREPPULSE_VIDEO`)
   - Git Bash: `PREPPULSE_VIDEO=data/videos/chest-visible.mp4 npm start`
-  - The same forms apply to `PREPPULSE_REPLAY`, `PREPPULSE_RECORD` and `PREPPULSE_VIDEO_DELAY_MS`.
+  - The same forms apply to `PREPPULSE_REPLAY`, `PREPPULSE_RECORD` and `PREPPULSE_FFMPEG`.
 
 ## SmartSpectra SDK facts (`@smartspectra/node-sdk` 3.5.0, checked 2026-11-16)
 
@@ -116,7 +116,10 @@ Other inputs: `useCustomInput()` + `sendFrame(buf, w, h, stride, PixelFormat, ts
 - `useFile(path, { timestampsPath, interframeDelayMs, startOffsetMs, maxDurationMs, frameTransform })`. The file "plays through the same pipeline as a live camera"; end of file shows as a transition to `kIdle`.
 - Formats: docs only say "Use a widely-supported container/codec such as MP4 (H.264)". macOS/Linux bundle FFmpeg 6.1.1 (LGPL build).
 - **`useFile()` cannot open normal video files on Windows in SDK 3.5.0** (confirmed 2026-11-16 with `OPENCV_VIDEOIO_DEBUG=1`). The bundled `opencv_world4100.dll` has every real decoder (MSMF, FFMPEG, GSTREAMER, INTEL_MFX) as a plugin DLL (`opencv_videoio_<name>4100_64.dll`), and none ship in `@smartspectra/node-sdk-win32-x64`. Only the built-in CV_IMAGES and CV_MJPEG readers exist. Both an MPEG-4 Part 2 AVI and an H.264 MP4 failed with "Video file source cannot start: Failed to open video file" then `kInputUnavailable`. The live camera is unaffected (different capture path). Worth reporting to Presage.
-- Untested workarounds: (a) re-encode to MJPEG in AVI so the built-in CV_MJPEG reader can open it (ffmpeg is installed via winget); (b) supply `opencv_videoio_ffmpeg4100_64.dll` from the official OpenCV 4.10.0 release via `OPENCV_VIDEOIO_PLUGIN_PATH` (a third-party binary: ask first); (c) decode with ffmpeg into a pipe and push raw RGB frames through `useCustomInput()` + `sendFrame()` (frames stay in memory, no OpenCV involved).
+- Chosen workaround (working, 2026-11-16): `lib/videofeed.js` decodes with ffmpeg into a pipe and pushes raw RGB frames through `useCustomInput()` + `sendFrame()` with epoch-µs timestamps spaced by the file's frame rate. Frames stay in memory, no OpenCV involved. On end of file it calls `stopAsync()`, so status goes kStopping then kIdle like `useFile`. Verified: 5355 frames at 30 fps accepted, `videoOutput` delivered (640x480 kRGB). Not tried: MJPEG AVI for the built-in reader, or adding OpenCV's FFmpeg plugin DLL.
+- **With custom input, `kRunning` arrives ~0.2 s after `kStarting` even while a positioning hint blocks measurement** (with the camera it stays `kStarting`). Never treat `kRunning` as "measuring": use `validationStatus` kOk plus actual stable samples.
+- **The chest check applies whatever metrics are requested.** Requesting only [15,16,17] (no breathing) still gave `kChestNotVisible` on every frame and zero metrics.
+- Files below 25 fps (half of the dataset is 24 fps) are under the SDK's sustained frame-rate floor; use 30 fps files.
 - Frame rate: the SDK measures it from timestamps (the optional timestamps file, one per line, else the video's playback position), not from `interframeDelayMs`. Capture at 30 fps; sustained >= 25 fps is required (`kSustainedLowFrameRate`, not retryable for files). No resolution is specified; the live camera runs at 1280x720, so record 720p.
 - Network and key: file sessions authenticate against Presage's service ("No offline mode"). Docs do not say whether file sessions consume credits differently; assume they cost the same as camera sessions. Credits are counted per account. Use replay (`PREPPULSE_REPLAY`) to iterate for free.
 - Analysis windows (minimum data before a value can be trusted): pulse rate 12 s, breathing rate and waveforms 30 s, HRV 60 s. Confidence starts at 0. Don't surface a value before its window has elapsed and `stable` is true.
@@ -127,7 +130,8 @@ Other inputs: `useCustomInput()` + `sendFrame(buf, w, h, stride, PixelFormat, ts
 - Attribution: MCD-rPPG (Multi-Camera Dataset for Remote Photoplethysmography), Egorov, K., Botman, S., Blinov, P., Zubkova, G., Ivaschenko, A., Kolsanov, A., & Savchenko, A. (2025). "Gaze into the Heart: A Multi-View Video Dataset for rPPG and Health Biomarkers Estimation". Proceedings of the 33rd ACM International Conference on Multimedia (MM '25). DOI 10.1145/3746027.3758255. https://huggingface.co/datasets/kyegorov/mcd_rppg. Licence: CC BY 4.0. Add this line to the README too.
 - Rules: development and testing only. Never ship, commit, or redistribute the videos; never put frames or screenshots of these people in the repo, README, DEV post or demo video. Do not use the dataset's health biomarker labels (only `patient_id`, `step`, `camera`, `view`, `video` columns of `db.csv` are needed). In the app and any UI text never call the "after" recording stress; in dev notes it is a "post-exercise sample". The dataset card also forbids identification and biometric use.
 - Layout: `video/<id>_<camera>_<before|after>.avi`. Cameras: `FullHDwebcam` = front view, `USBVideo` = left, `IriunWebcam` = right. 600 subjects x 2 states x 3 cameras = 3600 videos, ~180 s each, 640x480, 24 or 29.92 fps, MPEG-4 Part 2 (`FMP4`) in AVI without an index (headers report 0 frames), 16 to 90 MB each.
-- Local copies: `data/videos/mcd/` (gitignored), subjects 1035 and 1107, frontal before/after, as the original AVI plus an H.264 MP4 (libx264 CRF 10). Neither opens through `useFile()` on Windows (see above).
+- Local copies: `data/videos/mcd/` (gitignored): subjects 1035 and 1107 frontal before/after (original AVI plus an H.264 MP4, libx264 CRF 10, no longer needed), and 1035 left view before (AVI).
+- **Not usable with the SDK as framed.** Frontal (FullHDwebcam) 1035 before: `kChestNotVisible` on 5351 of 5355 frames, also with cardio-only metrics. Left view (USBVideo) 1035 before: `kFaceNotCentered` on 1800 of 1806 frames in 60 s, chest mostly visible. Zero metrics packets in all three runs. A possible next step is an ffmpeg crop on the left view to centre the face (in the pipe, nothing saved); untried.
 
 ### Decision: no facial expression metrics
 

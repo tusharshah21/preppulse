@@ -32,6 +32,13 @@ const bgra = Buffer.from([30, 20, 10, 255, 0, 0, 0, 0, 60, 50, 40, 255, 0, 0, 0,
 assert.deepStrictEqual([...downscaleToRGBA(bgra, 4, 2, 16, 3, 2).data], [10, 20, 30, 255, 40, 50, 60, 255]);
 assert.strictEqual(downscaleToRGBA(rgb, 4, 2, 12, 4), null); // NV12 not handled
 
+// Frame splitter reassembles odd-sized chunks into whole frames
+const { frameSplitter } = require('../lib/videofeed');
+const framesOut = [];
+const push = frameSplitter(4, (f) => framesOut.push([...f]));
+push(Buffer.from([1, 2, 3])); push(Buffer.from([4, 5])); push(Buffer.from([6, 7, 8, 9, 10]));
+assert.deepStrictEqual(framesOut, [[1, 2, 3, 4], [5, 6, 7, 8]]);
+
 // Record -> load -> replay with looping and timestamp shift
 const rec = createRecorder({ source: 'test' });
 rec.add('vitals:status', 'kRunning');

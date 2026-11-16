@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>PrepPulse</title>
+  <style>
+    body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 28px; background: #f6f7f9; color: #1d2330; }
+    main { max-width: 780px; margin: 0 auto; }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    h2 { font-size: 18px; margin: 0 0 8px; }
+    .card { background: #fff; border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px #0001; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    button { font: inherit; padding: 10px 18px; border: 0; border-radius: 8px; background: #2f5bd3; color: #fff; cursor: pointer; }
+    button.secondary { background: #e3e6ec; color: #1d2330; }
+    button.danger { background: #8a2b24; }
+    button.link { background: none; color: #2f5bd3; padding: 6px 0; text-decoration: underline; }
+    button:focus-visible { outline: 3px solid #f2b33d; outline-offset: 2px; }
+    button:disabled { opacity: .6; cursor: default; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .big { font-size: 34px; font-weight: 600; }
+    .muted { color: #5b6475; font-size: 13px; }
+    .calib { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+    #previewBox { background: #1d2330; color: #c9cfdb; border-radius: 8px; width: 320px; height: 180px; display: flex; align-items: center; justify-content: center; font-size: 13px; overflow: hidden; }
+    #preview { width: 320px; height: 180px; transform: scaleX(-1); display: block; }
+    progress { width: 100%; height: 14px; }
+    #hint { font-weight: 600; }
+    #error, #calError { color: #8a2b24; }
+    canvas#wave { width: 100%; height: 110px; display: block; }
+    [hidden] { display: none !important; }
+    @media (max-width: 700px) { .calib, .stats { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <!-- Consent -->
+  <section id="consent" class="card" hidden>
+    <h1>Before we turn on your camera</h1>
+    <p>PrepPulse can watch how your body responds while you practise, compared with your own calm baseline. Here is exactly what that means:</p>
+    <ul>
+      <li><strong>What we measure:</strong> your pulse, your breathing, and heart-rate variability (the small changes in time between heartbeats). The software reads these from tiny colour changes in your skin and small movements of your chest in the camera image.</li>
+      <li><strong>Your video stays here:</strong> it is processed on this computer, never leaves it, and is never saved.</li>
+      <li><strong>One check online:</strong> when a session starts, the measurement software (from a company called Presage) contacts Presage's servers to check this app's licence key. Its usage reporting (telemetry) is turned off.</li>
+      <li><strong>Your results stay here too:</strong> they are saved only on this computer, and you can delete them any time in Settings.</li>
+      <li><strong>Not a medical tool:</strong> PrepPulse does not diagnose anything or give medical advice. It only shows how your readings change compared with your own baseline.</li>
+    </ul>
+    <div class="row">
+      <button id="agreeBtn">I agree, start camera</button>
+      <button id="notNowBtn" class="secondary">Not now</button>
+    </div>
+  </section>
+
+  <!-- Home -->
+  <section id="home" hidden>
+    <div class="card">
+      <h1>PrepPulse</h1>
+      <p class="muted" id="cameraOff">The camera is off.</p>
+      <div id="baselineBox"></div>
+      <div class="row">
+        <button id="calibrateBtn">Learn my calm baseline</button>
+        <button id="settingsBtn" class="secondary">Settings</button>
+      </div>
+      <p id="error" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- Calibration -->
+  <section id="calibrate" hidden>
+    <div class="card">
+      <h1>Let's learn your calm baseline</h1>
+      <p>Sit comfortably, keep your face and upper chest in view, and breathe normally. There is nothing to do except relax. The readings usually take a minute or two to settle before the timer starts.</p>
+      <div class="calib">
+        <div>
+          <div id="previewBox"><span id="previewMsg">Camera preview will appear here</span><canvas id="preview" width="320" height="180" hidden></canvas></div>
+          <button id="previewBtn" class="link">Hide preview</button>
+          <p class="muted">The preview is only for positioning. It is never saved.</p>
+        </div>
+        <div>
+          <p id="hint" role="status" aria-live="polite">Starting camera...</p>
+          <progress id="calProgress" max="60" value="0" aria-label="Calibration progress"></progress>
+          <p class="muted"><span id="calSeconds">0</span> of 60 calm seconds collected</p>
+          <p id="calError" role="alert"></p>
+        </div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="card"><div class="muted">Pulse</div><div class="big" id="pulse">--</div><div class="muted" id="pulseNote">beats per minute</div></div>
+      <div class="card"><div class="muted">Breathing</div><div class="big" id="breathing">--</div><div class="muted" id="breathNote">breaths per minute</div></div>
+    </div>
+    <div class="card">
+      <div class="muted">Breathing waveform (chest movement)</div>
+      <canvas id="wave" width="700" height="110" aria-label="Breathing waveform"></canvas>
+    </div>
+    <button id="cancelBtn" class="secondary">Stop and turn camera off</button>
+  </section>
+
+  <!-- Settings -->
+  <section id="settings" class="card" hidden>
+    <h1>Settings</h1>
+    <h2>Your data</h2>
+    <p>PrepPulse keeps only your calm baseline (a few numbers and the date) in this folder on your computer:</p>
+    <p class="muted" id="dataFolder"></p>
+    <div class="row">
+      <button id="deleteBtn" class="danger">Delete all my data</button>
+      <button id="backBtn" class="secondary">Back</button>
+    </div>
+    <p id="deleteMsg" role="status"></p>
+  </section>
+</main>
+<script src="renderer.js"></script>
+</body>
+</html>

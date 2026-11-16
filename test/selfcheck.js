@@ -46,12 +46,13 @@ rec.add('vitals:frame', { data: [1] }); // must be ignored
 rec.add('vitals:metrics', { pulse: { value: 70, stable: true, timestamp: 1000 }, trace: [[1000, 1], [2000, 2]] });
 rec.add('vitals:status', 'kIdle');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'preppulse-'));
-const events = loadRecording(rec.save(dir, 'test'));
-assert.deepStrictEqual(events.map((e) => e.channel), ['vitals:status', 'vitals:metrics', 'vitals:status']);
+const loaded = loadRecording(rec.save(dir, 'test'));
+assert.strictEqual(loaded.meta.source, 'test');
+assert.deepStrictEqual(loaded.events.map((e) => e.channel), ['vitals:status', 'vitals:metrics', 'vitals:status']);
 assert.throws(() => { fs.writeFileSync(path.join(dir, 'bad.json'), '{"version":2}'); loadRecording(path.join(dir, 'bad.json')); });
 
 const got = [];
-const stop = play(events, (ch, d) => got.push([ch, d]));
+const stop = play(loaded, (ch, d) => got.push([ch, d]));
 setTimeout(() => {
   stop();
   fs.rmSync(dir, { recursive: true, force: true });

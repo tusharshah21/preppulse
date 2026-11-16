@@ -1,8 +1,12 @@
 'use strict';
 
-// One ~45 s live session to measure how the SDK behaves. Prints a summary only
-// (never the API key) and saves a numeric-only recording to data/recordings/.
-// Usage: npm run probe   (optional: PROBE_SECONDS=45)
+// One session to measure how the SDK behaves. Prints a summary only (never the
+// API key) and saves a numeric-only recording to data/recordings/.
+// Usage:
+//   npm run probe                                   live camera, PROBE_SECONDS (default 45)
+//   npm run probe -- --video data/videos/x.mp4      play a file to its end (cap: PROBE_SECONDS, default 600)
+//   add --out probe-chest-visible                   save as data/recordings/probe-chest-visible.json
+const fs = require('fs');
 const path = require('path');
 const { performance } = require('perf_hooks');
 const { startSession, stopSession, REQUESTED_METRICS } = require('../lib/vitals');
@@ -15,7 +19,14 @@ if (!apiKey || apiKey === 'your-api-key-here') {
   console.error('SMARTSPECTRA_API_KEY missing in .env');
   process.exit(1);
 }
-const SECONDS = Number(process.env.PROBE_SECONDS) || 45;
+const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
+const VIDEO = arg('--video') && path.resolve(arg('--video'));
+const OUT = arg('--out');
+if (OUT && !/^[\w.-]+$/.test(OUT)) { console.error('--out must be a plain file name'); process.exit(1); }
+const SECONDS = Number(process.env.PROBE_SECONDS) || (VIDEO ? 600 : 45);
+let endOfFile;
+const ended = new Promise((r) => { endOfFile = r; });
+let sawStarting = false;
 
 const stats = (xs) => {
   if (!xs.length) return 'n/a';
@@ -25,7 +36,7 @@ const stats = (xs) => {
 };
 const secs = (ms) => (ms == null ? 'never' : `${(ms / 1000).toFixed(1)} s`);
 
-const recorder = createRecorder({ source: 'probe', requestedMetrics: REQUESTED_METRICS });
+const recorder = createRecorder({ source: 'probe', input: VIDEO ? 'file' : 'camera', requestedMetrics: REQUESTED_METRICS });
 const statuses = [];
 const validation = new Map(); // code -> { count, hint }
 const errors = [];
@@ -34,6 +45,10 @@ const frames = { count: 0, first: null, lastWall: 0, firstWall: 0, luma: [] };
 let t0 = 0;
 let tRunning = null;
 const firstStable = { pulse: null, breathing: null, hrv: null };
+// Media time: sample timestamp minus the first packet's timestamp, in ms. This is
+// what counts for a file played faster or slower than real time.
+const firstSeenMedia = { pulse: null, breathing: null, hrv: null };
+const firstStableMedia = { pulse: null, breathing: null, hrv: null };
 
 function emit(channel, data) {
   recorder.add(channel, data);
@@ -41,6 +56,8 @@ function emit(channel, data) {
   if (channel === 'vitals:status') {
     statuses.push(`${data}@${secs(now)}`);
     if (data === 'kRunning' && tRunning == null) tRunning = now;
+    if (data === 'kStarting') sawStarting = true;
+    if (data === 'kIdle' && sawStarting) endOfFile();
   } else if (channel === 'vitals:validation') {
     const v = validation.get(data.code) || { count: 0, hint: data.hint };
     v.count++;
@@ -48,8 +65,13 @@ function emit(channel, data) {
   } else if (channel === 'vitals:error') {
     errors.push(`${data.code}: ${data.message} (retryable=${data.retryable}) @${secs(now)}`);
   } else if (channel === 'vitals:metrics') {
+    const base = packets[0]?.ts;
     for (const k of ['pulse', 'breathing', 'hrv']) {
-      if (data[k]?.stable && firstStable[k] == null) firstStable[k] = now;
+      const s = data[k];
+      if (!s) continue;
+      const media = Number.isFinite(s.timestamp) && base != null ? (s.timestamp - base) / 1000 : null;
+      if (firstSeenMedia[k] == null) firstSeenMedia[k] = media;
+      if (s.stable && firstStable[k] == null) { firstStable[k] = now; firstStableMedia[k] = media; }
     }
   }
 }
@@ -95,7 +117,8 @@ function traceAnalysis(key) {
 function summary() {
   const lines = [];
   const n = packets.length;
-  lines.push(`Session: ${SECONDS} s requested, metrics ${JSON.stringify(REQUESTED_METRICS)}, telemetry off`);
+  lines.push(`Input: ${VIDEO ? `file ${path.basename(VIDEO)}` : 'camera'}`);
+  lines.push(`Session: ${SECONDS} s cap, metrics ${JSON.stringify(REQUESTED_METRICS)}, telemetry off`);
   lines.push(`Statuses: ${statuses.join(', ')}`);
   lines.push(`Errors: ${errors.length ? errors.join(' | ') : 'none'}`);
   lines.push('Validation codes seen:');
@@ -131,6 +154,8 @@ function summary() {
   lines.push(`First stable pulse: ${rel(firstStable.pulse)}`);
   lines.push(`First stable breathing rate: ${rel(firstStable.breathing)}`);
   lines.push(`First stable HRV: ${rel(firstStable.hrv)}`);
+  const m = (k) => `first sample ${secs(firstSeenMedia[k])}, first stable ${secs(firstStableMedia[k])}`;
+  lines.push(`Media time from first packet: pulse ${m('pulse')}; breathing ${m('breathing')}; HRV ${m('hrv')}`);
   const lastOf = (arr) => (arr && arr.length ? arr[arr.length - 1] : null);
   const lastPacket = packets[n - 1]?.m;
   if (lastPacket) {
@@ -144,7 +169,7 @@ function summary() {
     const fps = (frames.count - 1) / ((frames.lastWall - frames.firstWall) / 1000);
     lines.push(`videoOutput: ${frames.count} frames, ~${fps.toFixed(1)} fps, ${frames.first.w}x${frames.first.h}, stride ${frames.first.stride}, pixelFormat ${frames.first.fmt}, mean brightness 0-255: ${stats(frames.luma)}`);
   } else {
-    lines.push('videoOutput: no frames delivered with useCamera');
+    lines.push('videoOutput: no frames delivered');
   }
   return lines.join('\n');
 }
@@ -153,16 +178,24 @@ function summary() {
   t0 = performance.now();
   let sdk;
   try {
-    sdk = await startSession({ apiKey, emit, onFrame, onRaw });
+    sdk = await startSession({ apiKey, emit, onFrame, onRaw, videoPath: VIDEO });
   } catch (e) {
     console.error(`start() failed: ${e.codeName}: ${e.message}`);
     process.exit(1);
   }
-  console.log(`Measuring for ${SECONDS} s. Sit comfortably and look at the camera...`);
-  await new Promise((r) => setTimeout(r, SECONDS * 1000));
+  console.log(VIDEO
+    ? `Playing ${path.basename(VIDEO)} to its end (cap ${SECONDS} s)...`
+    : `Measuring for ${SECONDS} s. Sit comfortably and look at the camera...`);
+  await Promise.race([new Promise((r) => setTimeout(r, SECONDS * 1000)), ended]);
   await stopSession(sdk);
   console.log(summary());
-  const file = recorder.save(path.join(ROOT, 'data', 'recordings'), 'probe');
+  const dir = path.join(ROOT, 'data', 'recordings');
+  let file = recorder.save(dir, 'probe');
+  if (OUT) {
+    const target = path.join(dir, OUT.endsWith('.json') ? OUT : `${OUT}.json`);
+    fs.renameSync(file, target);
+    file = target;
+  }
   console.log(`Recording saved: ${path.relative(ROOT, file)} (${recorder.events.length} events)`);
   process.exit(0);
 })();

@@ -13,6 +13,7 @@ A desktop app (Electron + Node.js) for students preparing for high-stakes exams 
 - Any stored data is local only, with a clear delete option. No accounts.
 - The API key is read from `.env` (`SMARTSPECTRA_API_KEY`, gitignored). Never print it, log it, send it to the renderer, or hardcode it. `.env.example` holds a placeholder.
 - Writing style: no em dashes anywhere.
+- Measurement pauses are data, not noise. Measurement can pause whenever the student moves out of position (any non-OK validation status, `kStarting`, an SDK error, or no new stable sample). Every feature must record each pause as a gap with its start, end and reason (the validation code), show it honestly (for example "not measured: moved out of view"), and never interpolate, smooth or carry a value across it. Medians and charts use measured samples only.
 
 ## Architecture
 
@@ -24,8 +25,18 @@ A desktop app (Electron + Node.js) for students preparing for high-stakes exams 
 - `index.html` + `renderer.js`: consent, home, calibration, settings screens. No Node access (`contextIsolation`, `sandbox`). All renderer permission requests are denied.
 - Preview frames: `videoOutput` (1280x720 RGB) is downscaled in main to ~320 px, throttled to ~10 fps, sent on `vitals:frame` only while the renderer has preview on. Never recorded, logged, or written to disk.
 - Storage: `app.getPath('userData')/preppulse-data/baseline.json` (latest calm baseline). Delete all data removes that folder and clears Chromium storage for the app session. Dev recordings live in `data/recordings/` (gitignored, project folder, not user data).
-- Env: `PREPPULSE_REPLAY=<recording.json>` replays instead of starting camera/SDK; `PREPPULSE_RECORD=1` saves live sessions to `data/recordings/`.
-- Run: `npm install`, copy `.env.example` to `.env`, `npm start`. Probe: `npm run probe` (`PROBE_SECONDS` to change length). Self-check: `npm test`.
+- Env (dev/testing only; with none set the app uses the live camera, which the final app and demo must use):
+  - `PREPPULSE_REPLAY=<recording.json>`: replays a recording, no camera, no SDK, no credits. Wins over `PREPPULSE_VIDEO`.
+  - `PREPPULSE_VIDEO=<file>`: plays a video file through the SDK with `useFile()` instead of the camera. Same consent screen, IPC events and recorder. Uses the API key and network like a live session.
+  - `PREPPULSE_VIDEO_DELAY_MS` (default 33): delay between file frames. Only changes playback speed; 0 = as fast as possible.
+  - `PREPPULSE_RECORD=1`: saves live or file sessions to `data/recordings/`.
+- Test videos live only in `data/videos/` (gitignored). Never commit them, and never copy or extract frames from them anywhere else.
+- Run: `npm install`, copy `.env.example` to `.env`, `npm start`. Probe: `npm run probe` (camera, `PROBE_SECONDS`), `npm run probe -- --video data/videos/<file> [--out <name>]` (file, plays to its end). Self-check: `npm test`.
+- Setting the env vars on Windows. In cmd, quote the whole assignment, or the space before `&&` ends up in the path:
+  - cmd: `set "PREPPULSE_VIDEO=data\videos\chest-visible.mp4" && npm start`
+  - PowerShell: `$env:PREPPULSE_VIDEO = "data\videos\chest-visible.mp4"; npm start` (stays set for the rest of that window; clear with `Remove-Item Env:PREPPULSE_VIDEO`)
+  - Git Bash: `PREPPULSE_VIDEO=data/videos/chest-visible.mp4 npm start`
+  - The same forms apply to `PREPPULSE_REPLAY`, `PREPPULSE_RECORD` and `PREPPULSE_VIDEO_DELAY_MS`.
 
 ## SmartSpectra SDK facts (`@smartspectra/node-sdk` 3.5.0, checked 2026-11-16)
 
@@ -99,6 +110,15 @@ Other inputs: `useCustomInput()` + `sendFrame(buf, w, h, stride, PixelFormat, ts
 - Status names arrive as `kIdle`, `kStarting`, `kRunning`, `kStopping` (the enum key names).
 - `videoOutput` IS delivered with `useCamera`: 1280x720, `PixelFormat.kRGB` (0), stride 3840, ~29.5 fps.
 - Still unknown: how long pulse and HRV take to reach `stable`, and whether a bad-face period resets the warm-up.
+
+### Video file input (`useFile`) and capture guidance (Presage docs, 2026-11-16)
+
+- `useFile(path, { timestampsPath, interframeDelayMs, startOffsetMs, maxDurationMs, frameTransform })`. The file "plays through the same pipeline as a live camera"; end of file shows as a transition to `kIdle`.
+- Formats: docs only say "Use a widely-supported container/codec such as MP4 (H.264)". On Windows no FFmpeg ships; decoding goes through the bundled OpenCV (`opencv_world4100.dll`, Media Foundation backend), so stick to MP4/H.264. macOS/Linux bundle FFmpeg 6.1.1 (LGPL build).
+- Frame rate: the SDK measures it from timestamps (the optional timestamps file, one per line, else the video's playback position), not from `interframeDelayMs`. Capture at 30 fps; sustained >= 25 fps is required (`kSustainedLowFrameRate`, not retryable for files). No resolution is specified; the live camera runs at 1280x720, so record 720p.
+- Network and key: file sessions authenticate against Presage's service ("No offline mode"). Docs do not say whether file sessions consume credits differently; assume they cost the same as camera sessions. Credits are counted per account. Use replay (`PREPPULSE_REPLAY`) to iterate for free.
+- Analysis windows (minimum data before a value can be trusted): pulse rate 12 s, breathing rate and waveforms 30 s, HRV 60 s. Confidence starts at 0. Don't surface a value before its window has elapsed and `stable` is true.
+- Capture conditions: one face, centred, facing the camera, even diffuse light, no backlight or flicker; upper chest visible and unobstructed; stationary camera; sit still, no talking, no chewing gum; plain light-coloured clothing (avoid dark or high-contrast stripes); wait for `kCameraTuning` to clear.
 
 ### Decision: no facial expression metrics
 

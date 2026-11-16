@@ -9,7 +9,9 @@ const { computeBaseline } = require('./lib/baseline');
 
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .env is reported on start */ }
 
+// Dev/testing switches. The default (none set) is the live camera.
 const REPLAY = process.env.PREPPULSE_REPLAY;
+const VIDEO = !REPLAY && process.env.PREPPULSE_VIDEO ? path.resolve(process.env.PREPPULSE_VIDEO) : undefined;
 const RECORD = process.env.PREPPULSE_RECORD === '1' && !REPLAY;
 const PREVIEW_INTERVAL_MS = 100;
 
@@ -56,9 +58,9 @@ async function start() {
   if (!apiKey || apiKey === 'your-api-key-here') {
     return { ok: false, message: 'No API key found. Copy .env.example to .env and set SMARTSPECTRA_API_KEY.' };
   }
-  if (RECORD) recorder = createRecorder({ source: 'app', requestedMetrics: REQUESTED_METRICS });
+  if (RECORD) recorder = createRecorder({ source: 'app', input: VIDEO ? 'file' : 'camera', requestedMetrics: REQUESTED_METRICS });
   try {
-    sdk = await startSession({ apiKey, emit, onFrame });
+    sdk = await startSession({ apiKey, emit, onFrame, videoPath: VIDEO });
     return { ok: true };
   } catch (e) {
     recorder = null;

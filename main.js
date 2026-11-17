@@ -7,7 +7,7 @@ const CONFIG = require('./lib/config');
 const { startSession, stopSession, downscaleToRGBA, REQUESTED_METRICS } = require('./lib/vitals');
 const { createRecorder, loadRecording, play } = require('./lib/recording');
 const { computeBaseline } = require('./lib/baseline');
-const { createCalibration, pausedHint } = require('./lib/calibration');
+const { createCalibration, measureState } = require('./lib/calibration');
 const { loadQuestions, publicView } = require('./lib/questions');
 const { createTestSession } = require('./lib/session');
 const { buildReport } = require('./lib/report');
@@ -89,17 +89,10 @@ function onFrame(buf, w, h, stride, fmt) {
   if (frame) send('vitals:frame', frame);
 }
 
-// What the calm indicator shows. Never numbers.
-function measureState(now) {
-  if (!lastValidation) return { state: 'starting', text: 'Starting camera...' };
-  if (!lastValidation.ok) return { state: 'paused', text: pausedHint(lastValidation.code, lastValidation.hint) };
-  if (now - lastStablePulseAt <= CONFIG.calibration.pulseFreshSeconds * 1000) return { state: 'measuring', text: 'Measuring' };
-  return { state: 'getting_ready', text: 'Getting ready' };
-}
 
 function onTick() {
   const now = Date.now();
-  send('measure:state', measureState(now));
+  send('measure:state', measureState(now, lastValidation, lastStablePulseAt));
   if (calibration) {
     send('calib:state', calibration.tick(now));
     if (calibration.result) finishCalibration();
@@ -200,6 +193,9 @@ function startTest(opts) {
   if (!running()) return { ok: false, message: 'The camera is not on.' };
   const baseline = readBaseline();
   if (!baseline) return { ok: false, message: 'Learn your calm baseline first.' };
+  // Wait for a steady pulse unless the student chose to start anyway.
+  const m = measureState(Date.now(), lastValidation, lastStablePulseAt);
+  if (m.state !== 'measuring' && !opts?.anyway) return { ok: false, waiting: true, message: m.text };
   const minutes = Number(opts?.minutes);
   if (!(minutes >= 1 && minutes <= 180)) return { ok: false, message: 'Test length must be 1 to 180 minutes.' };
   if (test) discardTest();

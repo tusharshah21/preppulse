@@ -130,9 +130,18 @@ async function showReady() {
   window.vitals.setPreview(previewWanted);
 }
 
-$('redoBtn').addEventListener('click', async () => { await window.vitals.setPreview(false); startCalibration(); });
-$('readyBackBtn').addEventListener('click', async () => { await stopCamera(); goHome(); });
-$('beginBtn').addEventListener('click', startTest);
+$('redoBtn').addEventListener('click', async () => {
+  readyIdle(); await window.vitals.setPreview(false); startCalibration(); });
+$('readyBackBtn').addEventListener('click', async () => {
+  readyIdle(); await stopCamera(); goHome(); });
+function readyIdle() {
+  clearTimeout(readyRetry);
+  $('beginBtn').disabled = false;
+  $('beginAnywayBtn').hidden = true;
+  $('readyWait').hidden = true;
+}
+$('beginBtn').addEventListener('click', () => startTest(false));
+$('beginAnywayBtn').addEventListener('click', () => startTest(true));
 
 // ---------- Calm indicator ----------
 
@@ -144,11 +153,25 @@ window.vitals.on('measure:state', ({ state, text }) => {
 
 let T = null; // { qs, idx, answers[], marked[], visited[], endsAt, timer }
 
-async function startTest() {
+// The test waits for a steady pulse reading (main says so with waiting: true),
+// retrying every second while this screen is open, unless the student starts anyway.
+let readyRetry = null;
+async function startTest(anyway) {
+  clearTimeout(readyRetry);
+  if (anyway === undefined && current !== 'ready') return; // a retry after leaving the screen
   const minutes = $('lenQuick').checked ? info.test.quickDemoMinutes : info.test.defaultMinutes;
-  await window.vitals.setPreview(false);
-  const res = await window.vitals.startTest({ minutes });
+  const res = await window.vitals.startTest({ minutes, anyway: anyway === true });
+  if (!res.ok && res.waiting) {
+    $('beginBtn').disabled = true;
+    $('beginAnywayBtn').hidden = false;
+    $('readyWait').hidden = false;
+    $('readyWait').textContent = `${res.message}. The test starts by itself once your pulse reading is steady, usually within about a minute. Starting now means the first part may not be measured.`;
+    if (current === 'ready') readyRetry = setTimeout(startTest, 1000);
+    return;
+  }
+  readyIdle();
   if (!res.ok) { $('readyError').textContent = res.message; return; }
+  await window.vitals.setPreview(false);
   const n = questionSet.questions.length;
   T = { qs: questionSet.questions, idx: 0, answers: new Array(n).fill(null), marked: new Array(n).fill(false), visited: new Array(n).fill(false), endsAt: Date.now() + res.durationMs, timer: null };
   $('testTitle').textContent = questionSet.title;
@@ -319,15 +342,33 @@ async function openReset(from) {
   $('resetCamNote').hidden = true;
   $('resetPulse').textContent = '';
   $('resetDoneBtn').textContent = res.inTest ? 'Back to the test' : 'Back';
+  $('resetCue').textContent = 'Get comfortable';
+  $('resetCount').textContent = '';
+  $('breathShape').hidden = true;
   wave = [];
   drawWave('resetWave', 0.6);
   show('reset');
+  // Camera already on (during a test): start right away. Otherwise the student
+  // picks "Show my breathing" (then the guide waits for the trace) or "Start without it".
+  $('resetGoBtn').hidden = res.camera;
+  if (res.camera) runDrill();
+}
+
+// Starts the guide once (from the button or when the breathing trace arrives).
+async function beginDrill() {
+  if (!R || R.started) return;
+  R.waitingTrace = false;
+  $('resetGoBtn').hidden = true;
+  $('resetCamBtn').hidden = true;
+  if (!R.inTest) await window.vitals.resetStart(); // the pulse line compares from the guide's start
   runDrill();
 }
+$('resetGoBtn').addEventListener('click', beginDrill);
 
 // Paced breathing: inhale, exhale, a few cycles. No score, nothing to get right.
 // With reduced motion the circle is replaced by a text countdown.
 function runDrill() {
+  R.started = true;
   const { inhaleSeconds, exhaleSeconds, cycles } = info.reset;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shape = $('breathShape');
@@ -394,6 +435,9 @@ $('resetCamBtn').addEventListener('click', () => withConsent(async () => {
   R.startedCamera = true;
   $('resetCamBtn').hidden = true;
   $('resetCamNote').hidden = false;
+  if (R.started) return;
+  R.waitingTrace = true;
+  $('resetCue').textContent = 'Getting ready';
 }));
 
 $('homeResetBtn').addEventListener('click', () => openReset('home'));
@@ -428,6 +472,7 @@ function showReport(report) {
   reportHeader({ score: report.header.score, durationMs: report.header.durationMs });
   const h = report.header;
   $('rMeasured').textContent = `${h.measuredFully} of ${h.questionCount} questions fully`;
+  $('rLag').textContent = String(report.pulseLagSeconds);
   $('rSaid').hidden = !report.selfReport;
   $('rSaid').textContent = report.selfReport ? `You said: ${report.selfReport}` : '';
   $('rPending').hidden = true;
@@ -529,6 +574,7 @@ window.vitals.on('vitals:metrics', ({ pulse, breathing, trace }) => {
   }
   const lastTs = wave.length ? wave[wave.length - 1][0] : -Infinity;
   for (const p of trace || []) if (p[0] > lastTs) wave.push(p);
+  if (current === 'reset' && R?.waitingTrace && wave.length >= 2) beginDrill();
   if (wave.length) {
     const cutoff = wave[wave.length - 1][0] - WAVE_WINDOW_US;
     while (wave.length && wave[0][0] < cutoff) wave.shift();

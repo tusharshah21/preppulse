@@ -174,7 +174,7 @@ test('resets: bands from events, question time paused, and a neutral before/afte
   assert.deepStrictEqual(r.timeline.resets, [{ start: 90000, end: 120000 }]);
   assert.deepStrictEqual(r.timeline.windows.filter((w) => w.q === 1), [{ q: 1, start: 60000, end: 90000 }, { q: 1, start: 120000, end: 120000 + 0 }].filter((w) => w.end > w.start));
   const obs = r.observations.find((o) => /reset/.test(o));
-  assert.strictEqual(obs, 'In the minute before your reset at 1:30, your pulse was a median of +14 compared with your calm baseline, and +6 in the minute after.');
+  assert.strictEqual(obs, 'In the minute before your reset at 1:30, your pulse was a median of +14 compared with your calm baseline, and +6 in the minute after. This compares two minutes; it can\'t tell what caused the change.');
   // An unfinished reset ends with the test; not enough samples: no observation.
   const thin = buildReport(makeSession({ n: 4, pulse: (t) => (t % 4 === 0 ? 80 : null), events: [{ t: 90000, type: 'reset_start' }] }));
   assert.deepStrictEqual(thin.timeline.resets, [{ start: 90000, end: 240000 }]);
@@ -209,7 +209,7 @@ test('observation: settle time after the biggest rise, from its peak', () => {
   assert.ok(!open.observations.some((o) => /settle back/.test(o)));
 });
 
-test('observation priority: biggest rise, recovery, reset, hard vs easy, breathing; at most 3', () => {
+test('observation priority: biggest rise, recovery, hard vs easy, breathing, reset; at most 3', () => {
   const opts = { n: 8, pulse: (s) => (s % 120 >= 30 && s % 120 < 70 ? 84 : 72), breathing: (s) => (s >= 320 ? 19 : 14), difficulty: (i) => (i % 2 ? 'hard' : 'easy') };
   const r = buildReport(makeSession(opts));
   assert.strictEqual(r.observations.length, CONFIG.report.maxObservations);
@@ -218,6 +218,12 @@ test('observation priority: biggest rise, recovery, reset, hard vs easy, breathi
   assert.match(r.observations[2], /hard-tagged/);
   const roomy = buildReport(makeSession(opts), { ...CONFIG.report, maxObservations: 5 });
   assert.match(roomy.observations.at(-1), /^Your breathing rate/);
+  // A reset observation comes after hard vs easy and breathing, so it is cut first.
+  const withReset = { ...opts, events: [{ t: 200000, type: 'reset_start' }, { t: 230000, type: 'reset_end' }] };
+  assert.ok(!buildReport(makeSession(withReset)).observations.some((o) => /reset/.test(o)));
+  const all = buildReport(makeSession(withReset), { ...CONFIG.report, maxObservations: 5 }).observations;
+  assert.match(all[3], /^Your breathing rate/);
+  assert.match(all[4], /^In the minute before your reset/);
 });
 
 test('biggest-rise observation adds a second sentence only when something happened', () => {
@@ -263,4 +269,12 @@ test('the window UI text avoids the banned words', () => {
     const m = fs.readFileSync(p, 'utf8').match(/\b(stress\w*|anxi\w*|panic\w*|nervous\w*)\b/i);
     assert.strictEqual(m, null, `${f} contains "${m?.[0]}"`);
   }
+});
+
+test('the "shifted about N seconds later" note comes from config', () => {
+  assert.strictEqual(buildReport(makeSession({})).pulseLagSeconds, CONFIG.report.pulseLagSeconds);
+  assert.strictEqual(buildReport(makeSession({}), { ...CONFIG.report, pulseLagSeconds: 9 }).pulseLagSeconds, 9);
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(html, /shifted about <span id="rLag">/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'renderer.js'), 'utf8'), /\$\('rLag'\)\.textContent = String\(report\.pulseLagSeconds\)/);
 });

@@ -137,3 +137,17 @@ test('the simulated recording calibrates in about two minutes', () => {
   assert.ok(Math.abs(med(r.breathing) - 14) < 1.5, `breathing ${med(r.breathing)}`);
   assert.ok(r.hrv.length > 0, 'HRV collected after 60 s of continuous OK');
 });
+
+test('a test waits for a steady pulse: measureState is "measuring" only with OK position and a fresh stable pulse', () => {
+  const { measureState } = require('../lib/calibration');
+  const now = 5_000_000;
+  assert.strictEqual(measureState(now, null, -Infinity).state, 'starting');
+  // Camera just turned on (the cold start behind Q1 "not measured"): position OK, no stable pulse yet.
+  assert.strictEqual(measureState(now, OK, -Infinity).state, 'getting_ready');
+  assert.strictEqual(measureState(now, CHEST, now - 1000).state, 'paused');
+  assert.strictEqual(measureState(now, OK, now - 1000).state, 'measuring');
+  assert.strictEqual(measureState(now, OK, now - 11000).state, 'getting_ready', 'stale after pulseFreshSeconds (10)');
+  // main.js refuses to start the test unless measuring, or the student chose "Start now anyway".
+  const main = require('fs').readFileSync(require('path').join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(main, /m\.state !== 'measuring' && !opts\?\.anyway\) return \{ ok: false, waiting: true/);
+});

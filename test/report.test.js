@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { buildReport, labelGaps, findRises, segments } = require('../lib/report');
+const { buildReport, labelGaps, findRises, segments, aboutDuration } = require('../lib/report');
 const CONFIG = require('../lib/config');
 
 const BANNED = /\b(stress\w*|anxi\w*|panic\w*|nervous\w*|diagnos\w*|at-risk|disorder\w*|healthy|unhealthy|good|bad|better|worse|normal|abnormal|poor\w*|well done)\b/i;
@@ -53,11 +53,13 @@ test('per-question median and peak change against the session baseline', () => {
 test('"too brief to read": short on screen, or under 10 s of measured pulse', () => {
   const s = makeSession({});
   s.questions[1].timeMs = 12000; // on screen 12 s
-  s.questions[2].measuredMs = 8000; // only 8 s measured
+  // Q3 (120 to 180 s, analysed 126 to 186 s with the lag): a pause leaves only 8 s measured.
+  s.gaps.pauses = [{ start: 126000, end: 178000, reason: 'kChestNotVisible' }];
   s.questions[2].coverage = 'partial';
   s.questions[3].coverage = 'none';
   s.questions[3].measuredMs = 0;
   const r = buildReport(s);
+  assert.strictEqual(r.questions[2].measuredSeconds, 8);
   assert.deepStrictEqual(r.questions.slice(0, 4).map((q) => q.status), ['ok', 'too_brief', 'too_brief', 'not_measured']);
   assert.strictEqual(r.questions[1].medianChange, null, 'no number for a brief question');
 });
@@ -93,20 +95,40 @@ test('charts never join points across a pause or a long spacing', () => {
   assert.deepStrictEqual(runs.map((r) => r.length), [2, 1, 2]);
 });
 
-test('recovery time after a noticeable rise', () => {
-  // +12 from 60 s to 100 s, then +6 for 10 s, then baseline.
+test('recovery time is measured from the peak of a noticeable rise', () => {
+  // +10 from 60 s, peak +16 at 75 s, +10 again until 100 s, +6 for 10 s, then baseline.
   const run = [];
-  for (let s = 0; s < 200; s++) run.push([s * 1000, s >= 60 && s < 100 ? 12 : s >= 100 && s < 110 ? 6 : 0]);
+  for (let s = 0; s < 200; s++) run.push([s * 1000, s === 75 ? 16 : s >= 60 && s < 100 ? 10 : s >= 100 && s < 110 ? 6 : 0]);
   const [rise] = findRises([run]);
-  assert.strictEqual(rise.peak, 12);
-  assert.strictEqual(rise.end, 99000);
-  assert.strictEqual(rise.recoveryMs, 11000, 'from the last reading at +8 or more to the first within 4');
+  assert.strictEqual(rise.peak, 16);
+  assert.strictEqual(rise.peakT, 75000);
+  assert.strictEqual(rise.recoveryMs, 35000, 'from the peak at 75 s to the first reading within 4 at 110 s');
   // Too short to count (15 s), and a rise hidden by the end of the data.
   assert.deepStrictEqual(findRises([run.map(([t]) => [t, t >= 60000 && t < 75000 ? 12 : 0])]), []);
   const unfinished = findRises([run.filter(([t]) => t < 105000)]);
   assert.strictEqual(unfinished[0].recoveryMs, null);
   const r = buildReport(makeSession({ n: 4, pulse: (s) => (s >= 60 && s < 100 ? 84 : 72) }));
-  assert.strictEqual(r.medianRecoveryMs, 1000);
+  assert.strictEqual(r.medianRecoveryMs, 40000, 'plateau: the first reading at the peak counts');
+});
+
+test('aboutDuration rounds to 5 s and spells out the words', () => {
+  assert.strictEqual(aboutDuration(85000), '1 minute 25 seconds');
+  assert.strictEqual(aboutDuration(41000), '40 seconds');
+  assert.strictEqual(aboutDuration(120000), '2 minutes');
+  assert.strictEqual(aboutDuration(1000), '5 seconds');
+});
+
+test('pulse lag: each question is analysed over its window shifted later', () => {
+  // Pulse is +12 only from 60 to 66 s: with a 6 s lag that belongs to Q1 (0 to 60 s, analysed 6 to 66 s), not Q2.
+  const s = makeSession({ pulse: (t) => (t >= 60 && t < 66 ? 84 : 72) });
+  const lagged = buildReport(s);
+  assert.strictEqual(lagged.questions[0].peakChange, 12);
+  assert.strictEqual(lagged.questions[1].peakChange, 0);
+  const noLag = buildReport(s, { ...CONFIG.report, pulseLagSeconds: 0 });
+  assert.strictEqual(noLag.questions[0].peakChange, 0);
+  assert.strictEqual(noLag.questions[1].peakChange, 12);
+  // The last question's shifted window is clipped to the end of the test.
+  assert.ok(lagged.questions[5].measuredSeconds <= 54);
 });
 
 test('observation: biggest rise names the question and what happened on it', () => {
@@ -139,16 +161,73 @@ test('observation: breathing last third vs first third, only with enough reading
   const sparse = buildReport(makeSession({ breathing: (s) => (s < 240 || s === 243 || s === 279 ? 14 : null) }));
   assert.ok(!sparse.breathingSections.some((x) => x.index === 2));
   assert.ok(!sparse.observations.some((o) => /breathing/i.test(o)));
+  // A change under minBreathingChangeForObservation (3) is skipped, with no "about the same" filler.
+  const small = buildReport(makeSession({ breathing: (s) => (s >= 240 ? 16 : 14) }));
+  assert.ok(!small.observations.some((o) => /breathing/i.test(o)), small.observations.join(' | '));
 });
 
-test('observation: median recovery time, capped at 3 observations', () => {
-  const r = buildReport(makeSession({ n: 8, pulse: (s) => (s % 120 >= 30 && s % 120 < 70 ? 84 : 72) }));
-  assert.ok(r.rises.length >= 3);
-  const rec = r.observations.find((o) => /come back close to your calm baseline/.test(o));
-  assert.ok(rec, r.observations.join(' | '));
-  assert.match(rec, /^After each rise, your pulse took a median of 1 second/);
-  const all = buildReport(makeSession({ n: 8, pulse: (s) => (s % 120 >= 30 && s % 120 < 70 ? 84 : 72), breathing: (s) => (s >= 320 ? 18 : 14), difficulty: (i) => (i % 2 ? 'hard' : 'easy') }));
-  assert.strictEqual(all.observations.length, CONFIG.report.maxObservations);
+test('resets: bands from events, question time paused, and a neutral before/after observation', () => {
+  // Reset from 90 to 120 s during Q2 (60 to 150 s). Pulse +14 before, +6 after.
+  const pulse = (s) => (s < 96 ? 86 : s < 126 ? 82 : 78);
+  const s = makeSession({ n: 4, secs: 60, pulse, events: [{ t: 90000, type: 'reset_start' }, { t: 120000, type: 'reset_end' }] });
+  const r = buildReport(s);
+  assert.deepStrictEqual(r.timeline.resets, [{ start: 90000, end: 120000 }]);
+  assert.deepStrictEqual(r.timeline.windows.filter((w) => w.q === 1), [{ q: 1, start: 60000, end: 90000 }, { q: 1, start: 120000, end: 120000 + 0 }].filter((w) => w.end > w.start));
+  const obs = r.observations.find((o) => /reset/.test(o));
+  assert.strictEqual(obs, 'In the minute before your reset at 1:30, your pulse was a median of +14 compared with your calm baseline, and +6 in the minute after.');
+  // An unfinished reset ends with the test; not enough samples: no observation.
+  const thin = buildReport(makeSession({ n: 4, pulse: (t) => (t % 4 === 0 ? 80 : null), events: [{ t: 90000, type: 'reset_start' }] }));
+  assert.deepStrictEqual(thin.timeline.resets, [{ start: 90000, end: 240000 }]);
+  assert.ok(!thin.observations.some((o) => /reset/.test(o)));
+});
+
+test('summary for the progress view', () => {
+  const r = buildReport(makeSession({ pulse: (s) => (s < 180 ? 81 : 73), difficulty: (i) => (i < 3 ? 'hard' : 'easy') }));
+  assert.strictEqual(r.summary.hardMedianChange, 9);
+  assert.strictEqual(r.summary.measuredShare, 1);
+  assert.deepStrictEqual([r.summary.correct, r.summary.total], [6, 6]);
+});
+
+test('self check-in shows as "You said", and only for a real answer', () => {
+  const s = makeSession({});
+  s.selfReport = { feeling: 'a_bit_tough', answeredAt: '2026-11-17T10:12:00.000Z' };
+  assert.strictEqual(buildReport(s).selfReport, 'a bit tough');
+  s.selfReport = { feeling: 'skipped' };
+  assert.strictEqual(buildReport(s).selfReport, null);
+  delete s.selfReport;
+  assert.strictEqual(buildReport(s).selfReport, null);
+});
+
+test('observation: settle time after the biggest rise, from its peak', () => {
+  // Rise 1: +12 (30 to 70 s). Rise 2: +20 peak at 150 s, then a slow fall: back within 4 at 235 s.
+  const pulse = (s) => (s >= 30 && s < 70 ? 84 : s >= 140 && s < 150 ? 90 : s >= 150 && s < 235 ? 92 - Math.floor((16 * (s - 150)) / 85) : 72);
+  const r = buildReport(makeSession({ n: 6, pulse }));
+  assert.ok(r.observations.includes('After your biggest rise, your pulse took about 1 minute 25 seconds to settle back near your calm baseline.'), r.observations.join(' | '));
+  assert.strictEqual(r.summary.biggestRiseSettleMs, 85000);
+  // Biggest rise still going at the end of the test: no recovery observation.
+  const open = buildReport(makeSession({ n: 4, pulse: (s) => (s >= 30 && s < 70 ? 84 : s >= 180 ? 95 : 72) }));
+  assert.ok(!open.observations.some((o) => /settle back/.test(o)));
+});
+
+test('observation priority: biggest rise, recovery, reset, hard vs easy, breathing; at most 3', () => {
+  const opts = { n: 8, pulse: (s) => (s % 120 >= 30 && s % 120 < 70 ? 84 : 72), breathing: (s) => (s >= 320 ? 19 : 14), difficulty: (i) => (i % 2 ? 'hard' : 'easy') };
+  const r = buildReport(makeSession(opts));
+  assert.strictEqual(r.observations.length, CONFIG.report.maxObservations);
+  assert.match(r.observations[0], /^Your pulse rose most/);
+  assert.match(r.observations[1], /^After your biggest rise/);
+  assert.match(r.observations[2], /hard-tagged/);
+  const roomy = buildReport(makeSession(opts), { ...CONFIG.report, maxObservations: 5 });
+  assert.match(roomy.observations.at(-1), /^Your breathing rate/);
+});
+
+test('biggest-rise observation adds a second sentence only when something happened', () => {
+  const pulse = (s) => (s >= 240 && s < 300 ? 88 : 72);
+  const plain = buildReport(makeSession({ pulse })).observations[0];
+  assert.strictEqual(plain, 'Your pulse rose most on Q5 (+16 above your calm baseline).');
+  const skipped = buildReport(makeSession({ pulse, events: [{ t: 290000, type: 'skipped', q: 4 }] })).observations[0];
+  assert.match(skipped, /You skipped Q5 at first and answered it later\.$/);
+  const marked = buildReport(makeSession({ pulse, events: [{ t: 250000, type: 'marked_for_review', q: 4, marked: true }] })).observations[0];
+  assert.match(marked, /You marked Q5 for review\.$/);
 });
 
 test('not enough data: no observations, a plain note, and HRV left out', () => {

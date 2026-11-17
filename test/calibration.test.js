@@ -9,10 +9,14 @@ const { build } = require('../scripts/make-simulated-recording');
 const T0 = 1_000_000;
 const OK = { ok: true, code: 'kOk', hint: '' };
 const CHEST = { ok: false, code: 'kChestNotVisible', hint: 'Place more of the chest in view.' };
-const cfg = {
-  warmupHintSlowSeconds: 120, warmupMaxSeconds: 300, minCalmSeconds: 60, maxCalibrationSeconds: 180,
-  minBreathingReadings: 3, pulseFreshSeconds: 10, breathingFreshSeconds: 45, hrvContinuousOkSeconds: 60,
-};
+const cfg = require('../lib/config').calibration;
+
+test('calibration settings: 10 breathing readings, other values unchanged', () => {
+  assert.deepStrictEqual(cfg, {
+    warmupHintSlowSeconds: 120, warmupMaxSeconds: 300, minCalmSeconds: 60, maxCalibrationSeconds: 180,
+    minBreathingReadings: 10, pulseFreshSeconds: 10, breathingFreshSeconds: 45, hrvContinuousOkSeconds: 60,
+  });
+});
 
 // Drive the machine second by second. plan(s) returns what happens at second s:
 // { v: validation, pulse, breathing, hrv } (each optional, values = stable samples).
@@ -68,7 +72,7 @@ test('done after 60 calm seconds of each, with a baseline of measured samples on
   assert.strictEqual(r.outcome, 'done');
   assert.ok(r.seconds >= 60 && r.seconds <= 62, `seconds ${r.seconds}`);
   assert.ok(r.calmSeconds.pulse >= 60 && r.calmSeconds.breathing >= 60);
-  assert.ok(r.breathing.length >= 3);
+  assert.ok(r.breathing.length >= 10);
   assert.deepStrictEqual(r.notes, []);
   assert.strictEqual(states.at(-1).phase, 'done');
 });
@@ -87,14 +91,33 @@ test('sparse breathing extends calibration up to the cap, then saves with an hon
   const { r } = run((s) => ({ v: OK, pulse: 72, breathing: s === 2 || s === 10 ? 15 : null, hrv: 40 }), 400);
   assert.strictEqual(r.outcome, 'done');
   assert.ok(r.seconds >= 180 && r.seconds <= 181, `capped at ${r.seconds}`);
-  assert.ok(r.notes.some((n) => /Breathing readings were sparse/.test(n)), r.notes.join(' | '));
+  assert.ok(r.notes.some((n) => /Breathing readings were sparse: 1 of the 10 steady readings needed arrived in 180 seconds/.test(n)), r.notes.join(' | '));
 });
 
 test('enough breathing calm time but too few readings still extends', () => {
-  // Readings every 40 s keep breathing "fresh"; the third counted one arrives at 120 s.
-  const { r } = run((s) => ({ v: OK, pulse: 72, breathing: s % 40 === 0 ? 14 : null }), 400);
+  // Readings every 15 s keep breathing "fresh"; the tenth counted one arrives at 150 s.
+  const { r } = run((s) => ({ v: OK, pulse: 72, breathing: s % 15 === 0 ? 14 : null }), 400);
   assert.strictEqual(r.outcome, 'done');
-  assert.ok(r.seconds >= 118 && r.seconds <= 122, `extended to the third reading, ${r.seconds}`);
+  assert.strictEqual(r.breathing.length, 10);
+  assert.ok(r.seconds >= 148 && r.seconds <= 152, `extended to the tenth reading, ${r.seconds}`);
+  assert.ok(!r.notes.some((n) => /Breathing/.test(n)), r.notes.join(' | '));
+});
+
+test('breathing readings from before breathing first became stable are not used', () => {
+  const cal = createCalibration(T0, cfg);
+  const pkt = (s, b, bts = s) => ({ pulse: { value: 72, stable: true, timestamp: s * 1e6 }, ...(b == null ? {} : { breathing: { value: b, stable: true, timestamp: bts * 1e6 } }) });
+  cal.onValidation(T0, OK);
+  cal.onMetrics(T0 + 5000, pkt(5, 15)); // breathing first stable, sample time 5 s
+  cal.tick(T0 + 5000);
+  assert.strictEqual(cal.state(T0 + 5000).phase, 'calibrating');
+  cal.onMetrics(T0 + 6000, pkt(6, 30, 2)); // late packet stamped 2 s: before first stable
+  for (let s = 7; s <= 400 && !cal.result; s++) {
+    cal.onMetrics(T0 + s * 1000, pkt(s, s % 5 === 0 ? 14 : null));
+    cal.tick(T0 + s * 1000);
+  }
+  assert.ok(!cal.result.breathing.includes(30), 'old reading dropped');
+  assert.ok(!cal.result.breathing.includes(15), 'the first stable reading was taken during warm-up, not calibration');
+  assert.ok(cal.result.breathing.length >= 10);
 });
 
 test('HRV counts only after 60 s of continuous OK and never extends calibration', () => {

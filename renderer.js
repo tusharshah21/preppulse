@@ -35,7 +35,7 @@ function baselineLines(box) {
   const b = baseline;
   const breath = b.breathingPerMin == null ? 'breathing: not enough data yet' : `breathing ${Math.round(b.breathingPerMin)} per minute`;
   box.append(el('p', `Your calm baseline: pulse ${Math.round(b.pulseBpm)}, ${breath}.`));
-  box.append(el('p', b.hrvRmssdMs == null ? 'Heart-rate variability: not enough data yet.' : `Heart-rate variability (RMSSD): ${Math.round(b.hrvRmssdMs)} ms.`));
+  box.append(el('p', b.hrvRmssdMs == null ? 'Heart-rate variability: not available from this calibration.' : `Heart-rate variability (RMSSD): ${Math.round(b.hrvRmssdMs)} ms.`));
   for (const n of b.notes || []) if (!/not enough data yet/.test(n)) box.append(el('p', n, 'notes'));
   box.append(el('p', `Saved ${formatDate(b.createdAt)}. Your sessions are compared with these numbers, not with anyone else's.`, 'muted'));
 }

@@ -97,7 +97,7 @@ Signals used (requested metrics `[0, 2, 15, 16, 17]`):
 - **Pulse rate** (`PULSE_RATE`): the main signal for the pressure map, as change from your calm baseline per question.
 - **Breathing rate** (`BREATHING_RATE`): by third of the test.
 - **Breathing trace** (`CHEST_BREATHING`, the chest waveform): drawn live during calibration and faintly behind the 30-second reset.
-- **Heart-rate variability** (`HRV`, RMSSD): by half of the test, only when there is enough data.
+- **Heart-rate variability, when available** (`HRV`, RMSSD): by half of the test, only when the SDK produced enough readings. In our live webcam run (312 s of camera, metric 17 requested, no SDK errors) the SDK produced no HRV readings at all, so expect the report and baseline to say it was not available. The rest of the app does not depend on it.
 - `ARTERIAL_PRESSURE_TRACE` is requested only because the SDK delivers no pulse without it. Its values are not used or shown.
 
 Facial expressions (`EXPRESSIONS`) and face landmarks (`FACE_LANDMARKS`) are deliberately never requested. Expression labels such as fear or anger are judgements about a person's state of mind, and PrepPulse only describes what the body did, never why or what it means. Landmarks are face geometry the app has no use for.
@@ -113,7 +113,7 @@ Where the SDK code lives:
 
 **Consent first.** The camera turns on only after you press "I agree, start camera" on the consent screen, in this run of the app. Consent is not remembered; it is asked again every time the app starts. There is no background or hidden monitoring: the camera is on only during calibration, a test, or a reset where you chose "Show my breathing", and it turns off afterwards.
 
-**What is measured.** Pulse, breathing rate, the breathing waveform and heart-rate variability, read by the SDK from small colour changes in your skin and small movements of your chest in the camera image.
+**What is measured.** Pulse, breathing rate, the breathing waveform and heart-rate variability (when available), read by the SDK from small colour changes in your skin and small movements of your chest in the camera image.
 
 **On your device.** Video is processed on your computer. PrepPulse never saves any video frame or image: not to disk, not in a recording, not in a log. No face images are kept. The small camera preview during calibration is kept in memory only, for display, and can be hidden.
 
@@ -140,8 +140,8 @@ What this shows, and what it doesn't:
 
 **What is stored, and where.** Only on your computer, in the app's data folder (on Windows `%APPDATA%\preppulse\preppulse-data\`; the exact path is shown in Settings):
 
-- `baseline.json`: your latest calm baseline (pulse, breathing rate, HRV, and when it was measured).
-- `sessions/<date and time>.json`: one file per practice test, with question timings, your answers and score, the measured numbers (pulse, breathing and HRV readings with timestamps), measurement pauses, and your optional check-in answer.
+- `baseline.json`: your latest calm baseline (pulse, breathing rate, HRV when available, and when it was measured).
+- `sessions/<date and time>.json`: one file per practice test, with question timings, your answers and score, the measured numbers (pulse and breathing readings, and HRV readings when available, with timestamps), measurement pauses, and your optional check-in answer.
 
 In replay mode, or with a developer test video, the baseline is kept in its own file (`baseline-simulated.json` or `baseline-dataset.json`), so it never replaces yours.
 

@@ -8,7 +8,8 @@
     "postinstall": "install-electron",
     "probe": "node scripts/probe.js",
     "test": "node --test",
-    "simulate": "node scripts/make-simulated-recording.js"
+    "simulate": "node scripts/make-simulated-recording.js",
+    "netwatch": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/netwatch.ps1"
   },
   "type": "commonjs",
   "dependencies": {

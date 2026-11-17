@@ -13,6 +13,7 @@ const { createTestSession } = require('./lib/session');
 const { buildReport } = require('./lib/report');
 const { resetPulseLine } = require('./lib/reset');
 const { isFeeling, selfReport, needsSupportScreen } = require('./lib/checkin');
+const { createDiagnostics } = require('./lib/diagnostics');
 
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .env is reported on start */ }
 
@@ -20,6 +21,7 @@ try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .e
 const REPLAY = process.env.PREPPULSE_REPLAY;
 const VIDEO = !REPLAY && process.env.PREPPULSE_VIDEO ? path.resolve(process.env.PREPPULSE_VIDEO) : undefined;
 const RECORD = process.env.PREPPULSE_RECORD === '1' && !REPLAY;
+const DIAGNOSTICS = process.env.PREPPULSE_DIAGNOSTICS === '1'; // numbers-only timing file per camera session
 const MODE = REPLAY ? 'replay' : VIDEO ? 'video' : 'camera';
 const PREVIEW_INTERVAL_MS = 100;
 const QUESTION_FILE = path.join(__dirname, 'questions', 'sample-test.json');
@@ -45,6 +47,7 @@ let test = null; // { session, timer, result, finalizeTimer, checkin }
 let recentPulse = []; // stable pulse [sample time ms epoch, bpm], last 2 minutes, for the reset line
 let reset = null; // { startMs, inTest }
 let lastSaved = null; // file name of the session saved last, for a late check-in answer
+let diag = null; // diagnostics collector while the camera is on (PREPPULSE_DIAGNOSTICS=1)
 
 const dataDir = () => path.join(app.getPath('userData'), 'preppulse-data');
 const baselineFile = () => path.join(dataDir(), 'baseline.json');
@@ -61,6 +64,12 @@ function emit(channel, data) {
   if (recorder) recorder.add(channel, data);
   send(channel, data);
   const t = Date.now();
+  if (diag) {
+    if (channel === 'vitals:status') diag.onStatus(t, data);
+    else if (channel === 'vitals:validation') diag.onValidation(t, data);
+    else if (channel === 'vitals:error') diag.onError(t, data);
+    else if (channel === 'vitals:metrics') diag.onMetrics(t, data);
+  }
   if (channel === 'vitals:validation') {
     lastValidation = data;
     calibration?.onValidation(t, data);
@@ -105,6 +114,7 @@ async function start() {
   lastValidation = null;
   lastStablePulseAt = -Infinity;
   recentPulse = [];
+  if (DIAGNOSTICS) diag = createDiagnostics(Date.now(), { mode: MODE, simulated: SIMULATED, requestedMetrics: REPLAY ? null : REQUESTED_METRICS });
   if (REPLAY) {
     if (!replayRec) return { ok: false, message: `Could not replay ${path.basename(REPLAY)}: ${replayError}` };
     stopReplay = play(replayRec, emit);
@@ -125,7 +135,22 @@ async function start() {
   return { ok: true };
 }
 
+function saveDiagnostics() {
+  const d = diag;
+  diag = null;
+  if (!d) return;
+  try {
+    const now = Date.now();
+    const dir = path.join(__dirname, 'data', 'diagnostics');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${new Date(now).toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify(d.summary(now), null, 2));
+  } catch (e) {
+    console.error('Could not save diagnostics:', e.message);
+  }
+}
+
 async function stop() {
+  saveDiagnostics();
   previewOn = false;
   calibration = null;
   clearInterval(ticker);
@@ -167,6 +192,7 @@ async function startCalibration() {
 async function finishCalibration() {
   const r = calibration.result;
   calibration = null;
+  diag?.onCalibration(Date.now(), r);
   if (r.outcome !== 'done') {
     await stop();
     return send('calib:done', { ok: false, message: r.notes.join(' ') });
@@ -232,6 +258,7 @@ async function finalizeTest() {
   clearTimeout(t.finalizeTimer);
   test = null;
   const full = t.session.finish();
+  diag?.onTest(full);
   try {
     fs.mkdirSync(sessionsDir(), { recursive: true });
     const file = path.join(sessionsDir(), `${full.startedAt.replace(/[:.]/g, '-')}.json`);

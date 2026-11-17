@@ -22,6 +22,12 @@ It is a desktop app (Electron and Node), it runs entirely on your machine, and i
 
 🎬 **[Watch the demo video](PASTE_VIDEO_LINK_HERE)**
 
+**The idea in 60 seconds.** Before the real app, a short hand-drawn explainer with a voice-over. It is a sketch of the idea, not the app's screens, and the numbers on its pressure map are examples.
+
+**[EXPLAINER FILM: YouTube link]**
+
+![A hand-drawn page of notes: a student at a desk, the PrepPulse laptop, a calm baseline, a pressure map, a 30-second reset and five privacy ticks](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/explainer-poster.jpg)
+
 Every screenshot below is from a live webcam session, measured with the SmartSpectra SDK. None of them use simulated data.
 
 **[SCREENSHOT: calibration, learning your calm baseline, with the live pulse and breathing trace]**
@@ -58,15 +64,24 @@ The arterial pressure trace is requested only because the SDK delivers no pulse 
 
 **A personal baseline.** Before the first test of the day, PrepPulse learns your calm baseline. It waits until pulse and breathing have each given a stable reading once, then needs 60 calm seconds of each and at least 10 stable breathing readings. If breathing stays sparse, it stops at 180 seconds and says how many readings it got. Everything in the report is a change from this baseline. There are no population norms anywhere, and nothing is called high, low, good or bad.
 
+![Sketch: a wavy pulse line calms into a flat yellow line labelled "your calm baseline", next to "you vs you"](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/gif-baseline.gif)
+*From the explainer: a sketch of the idea, not the app's screen.*
+
 **Lining up questions with the body.** A pulse value summarises roughly the previous 12 seconds, so a question's own response shows up a few seconds after it appears. Each question's window is shifted 6 seconds later before its readings are taken. A question needs at least 6 seconds on screen and 4 seconds of steady pulse to get a value at all; values from short visits are labelled "brief" so you read them loosely.
 
 **Honest gaps.** When the SDK says the position is not OK (face not found, chest not in view, too dark, too much motion) or no stable pulse arrives, that stretch is recorded as a gap with its reason and drawn as a gap. Nothing is interpolated. A question with too little data says "not measured" instead of guessing.
 
 **Rises on the timeline.** A rise is the pulse staying at least 8 beats per minute above your baseline for at least 6 seconds. The report names the questions on screen during it and times how long the pulse took to come back within 4 beats of baseline.
 
+![Sketch: the yellow baseline runs under questions Q1 to Q8 while a pulse line rises above it around Q5 and settles back](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/gif-pressure-map.gif)
+*From the explainer: a simplified sketch, not the real report. "+12" and "~10 s" are examples, not measurements.*
+
 **Observations from fixed rules.** Up to three sentences, written by rules in `lib/report.js`, only when there is enough data. From my live session: "Your pulse rose most around Q4 and Q5 (+23 above your calm baseline)." and "After your biggest rise, your pulse took about 10 seconds to settle back near your calm baseline." They describe what the body did, never why.
 
 **The reset drill.** "Take a 30-second reset" is in the test header. A circle guides three slow breaths (4 seconds in, 6 out) while the live breathing trace runs faintly behind it, so you can see your chest follow the circle. The test timer keeps running, as it would in the exam hall, and the screen says so. The reset is drawn as a band on the pulse timeline, and the report compares the minute before with the minute after when there is enough data.
+
+![Sketch: a yellow circle with "in 4, out 6, x3", then a small student in the exam hall with "eyes on the paper, no app"](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/gif-reset.gif)
+*From the explainer: the same three breaths work in the exam hall, with no app.*
 
 **Why no facial expressions.** The SDK can return expression labels and face landmarks. PrepPulse never requests either. An expression label such as fear or anger is a judgement about someone's state of mind, made from their face, and that is exactly what this app should not do. It reports what the body measurably did and leaves the meaning to the student.
 

@@ -14,6 +14,8 @@ const { buildReport } = require('./lib/report');
 const { resetPulseLine } = require('./lib/reset');
 const { isFeeling, selfReport, needsSupportScreen } = require('./lib/checkin');
 const { createDiagnostics } = require('./lib/diagnostics');
+const { describeSource, kindOf } = require('./lib/source');
+const { createRestartGate } = require('./lib/videofeed');
 
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .env is reported on start */ }
 
@@ -21,6 +23,7 @@ try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .e
 const REPLAY = process.env.PREPPULSE_REPLAY;
 const VIDEO = !REPLAY && process.env.PREPPULSE_VIDEO ? path.resolve(process.env.PREPPULSE_VIDEO) : undefined;
 const RECORD = process.env.PREPPULSE_RECORD === '1' && !REPLAY;
+const VIDEO_LOOP = !!VIDEO && process.env.PREPPULSE_VIDEO_LOOP === '1'; // restart the file at its end
 const DIAGNOSTICS = process.env.PREPPULSE_DIAGNOSTICS === '1'; // numbers-only timing file per camera session
 const MODE = REPLAY ? 'replay' : VIDEO ? 'video' : 'camera';
 const PREVIEW_INTERVAL_MS = 100;
@@ -31,7 +34,10 @@ let replayError = null;
 if (REPLAY) {
   try { replayRec = loadRecording(REPLAY); } catch (e) { replayError = e.message; }
 }
-const SIMULATED = replayRec?.meta.simulated === true;
+// How this run is labelled, and which data it may mix with (lib/source.js).
+const SOURCE = describeSource({ root: __dirname, replay: !!REPLAY, replayMeta: replayRec?.meta, videoPath: VIDEO });
+const SIMULATED = SOURCE.dataKind === 'simulated';
+const DATASET = SOURCE.dataKind === 'dataset' ? SOURCE.dataset : null;
 
 let win = null;
 let sdk = null;
@@ -48,9 +54,11 @@ let recentPulse = []; // stable pulse [sample time ms epoch, bpm], last 2 minute
 let reset = null; // { startMs, inTest }
 let lastSaved = null; // file name of the session saved last, for a late check-in answer
 let diag = null; // diagnostics collector while the camera is on (PREPPULSE_DIAGNOSTICS=1)
+let gate = null; // looping video: turns the time around each restart into a pause
 
 const dataDir = () => path.join(app.getPath('userData'), 'preppulse-data');
-const baselineFile = () => path.join(dataDir(), 'baseline.json');
+// One baseline per kind, so a demo or simulated run never replaces the real one.
+const baselineFile = () => path.join(dataDir(), SOURCE.dataKind === 'real' ? 'baseline.json' : `baseline-${SOURCE.dataKind}.json`);
 const sessionsDir = () => path.join(dataDir(), 'sessions');
 const running = () => !!(sdk || stopReplay);
 
@@ -61,9 +69,11 @@ const send = (channel, data) => {
 // Every SDK (or replay) event goes to the recorder, the window, and whatever
 // is measuring right now (calibration or a test session), stamped on arrival.
 function emit(channel, data) {
+  const t = Date.now();
+  if (gate && channel === 'vitals:validation') data = gate.validation(t, data);
+  else if (gate && channel === 'vitals:metrics') data = gate.metrics(data);
   if (recorder) recorder.add(channel, data);
   send(channel, data);
-  const t = Date.now();
   if (diag) {
     if (channel === 'vitals:status') diag.onStatus(t, data);
     else if (channel === 'vitals:validation') diag.onValidation(t, data);
@@ -114,7 +124,8 @@ async function start() {
   lastValidation = null;
   lastStablePulseAt = -Infinity;
   recentPulse = [];
-  if (DIAGNOSTICS) diag = createDiagnostics(Date.now(), { mode: MODE, simulated: SIMULATED, requestedMetrics: REPLAY ? null : REQUESTED_METRICS });
+  if (DIAGNOSTICS) diag = createDiagnostics(Date.now(), { mode: MODE, simulated: SIMULATED, dataset: DATASET, requestedMetrics: REPLAY ? null : REQUESTED_METRICS });
+  gate = VIDEO_LOOP ? createRestartGate() : null;
   if (REPLAY) {
     if (!replayRec) return { ok: false, message: `Could not replay ${path.basename(REPLAY)}: ${replayError}` };
     stopReplay = play(replayRec, emit);
@@ -123,9 +134,16 @@ async function start() {
     if (!apiKey || apiKey === 'your-api-key-here') {
       return { ok: false, message: 'No API key found. Copy .env.example to .env and set SMARTSPECTRA_API_KEY.' };
     }
-    if (RECORD) recorder = createRecorder({ source: 'app', input: VIDEO ? 'file' : 'camera', requestedMetrics: REQUESTED_METRICS });
+    if (RECORD) recorder = createRecorder({ source: 'app', input: VIDEO ? 'file' : 'camera', requestedMetrics: REQUESTED_METRICS, ...(DATASET && { dataset: DATASET, notUserData: true }) });
     try {
-      sdk = await startSession({ apiKey, emit, onFrame, videoPath: VIDEO });
+      sdk = await startSession({
+        apiKey,
+        emit,
+        onFrame: SOURCE.preview ? onFrame : undefined, // file input: no frames of the person ever reach the window
+        videoPath: VIDEO,
+        loop: VIDEO_LOOP,
+        onRestart: (frameUs) => { if (gate) emit('vitals:validation', gate.restart(Date.now(), frameUs / 1000)); },
+      });
     } catch (e) {
       recorder = null;
       return { ok: false, message: `${e.codeName}: ${e.message}` };
@@ -143,7 +161,7 @@ function saveDiagnostics() {
     const now = Date.now();
     const dir = path.join(__dirname, 'data', 'diagnostics');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${new Date(now).toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify(d.summary(now), null, 2));
+    fs.writeFileSync(path.join(dir, `${new Date(now).toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify({ ...d.summary(now), videoRestarts: gate ? gate.count : null }, null, 2));
   } catch (e) {
     console.error('Could not save diagnostics:', e.message);
   }
@@ -178,7 +196,8 @@ function readBaseline() {
   let b = null;
   try { b = JSON.parse(fs.readFileSync(baselineFile(), 'utf8')); } catch { return null; }
   // A baseline learned from simulated data never counts for a real session.
-  if (b?.simulated && !SIMULATED) return null;
+  // Nor one learned from a demo video, and the other way round.
+  if (kindOf(b) !== SOURCE.dataKind) return null;
   return b;
 }
 
@@ -198,7 +217,7 @@ async function finishCalibration() {
     return send('calib:done', { ok: false, message: r.notes.join(' ') });
   }
   try {
-    const baseline = { ...computeBaseline(r), calmSeconds: r.calmSeconds, notes: r.notes, gaps: r.gaps, simulated: SIMULATED };
+    const baseline = { ...computeBaseline(r), calmSeconds: r.calmSeconds, notes: r.notes, gaps: r.gaps, simulated: SIMULATED, ...(DATASET && { dataset: DATASET }) };
     fs.mkdirSync(dataDir(), { recursive: true });
     fs.writeFileSync(baselineFile(), JSON.stringify(baseline, null, 2));
     send('calib:done', { ok: true, baseline });
@@ -233,7 +252,7 @@ function startTest(opts) {
     settings: { minutes, durationMs, quickDemo: minutes === CONFIG.test.quickDemoMinutes, questionFile: path.basename(QUESTION_FILE), coverage: CONFIG.coverage },
     baseline,
     questions,
-    source: { mode: MODE, simulated: SIMULATED, recording: REPLAY ? path.basename(REPLAY) : null },
+    source: { mode: MODE, simulated: SIMULATED, dataset: DATASET, videoLoop: VIDEO_LOOP, recording: REPLAY ? path.basename(REPLAY) : null },
     lastValidation,
   });
   test = { session: sessionObj, startedAt, durationMs, result: null, finalizeTimer: null };
@@ -328,7 +347,7 @@ function listSessions() {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(sessionsDir(), file), 'utf8'));
       if (s.format !== 'preppulse-session/1') continue;
-      out.push({ file, startedAt: s.startedAt, minutes: s.settings?.minutes, score: s.score, simulated: !!s.source?.simulated, summary: buildReport(s).summary });
+      out.push({ file, startedAt: s.startedAt, minutes: s.settings?.minutes, score: s.score, simulated: !!s.source?.simulated, dataset: s.source?.dataset || null, summary: buildReport(s).summary });
     } catch { /* unreadable file: skip */ }
   }
   return out.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
@@ -412,10 +431,10 @@ app.whenReady().then(() => {
     if (!win || e.sender !== win.webContents) throw new Error('denied');
     return fn(arg);
   });
-  handle('app:info', () => ({ mode: MODE, simulated: SIMULATED, test: { defaultMinutes: CONFIG.test.defaultMinutes, quickDemoMinutes: CONFIG.test.quickDemoMinutes }, reset: CONFIG.reset }));
+  handle('app:info', () => ({ mode: MODE, simulated: SIMULATED, dataset: DATASET, banner: SOURCE.banner, preview: SOURCE.preview, test: { defaultMinutes: CONFIG.test.defaultMinutes, quickDemoMinutes: CONFIG.test.quickDemoMinutes }, reset: CONFIG.reset }));
   handle('vitals:start', start);
   handle('vitals:stop', () => { discardTest(); return stop(); });
-  handle('vitals:preview', (on) => { previewOn = on === true && !!sdk; });
+  handle('vitals:preview', (on) => { previewOn = on === true && !!sdk && SOURCE.preview; });
   handle('calib:start', startCalibration);
   handle('baseline:get', readBaseline);
   handle('questions:get', () => (questions ? publicView(questions) : null));

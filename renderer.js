@@ -3,9 +3,10 @@
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const WAVE_WINDOW_US = 20e6; // sample timestamps are epoch microseconds
+const WAVE_MAX_STEP_US = 1e6; // trace samples come every ~33 ms; a longer step is a gap
 const SCREENS = ['consent', 'home', 'calibrate', 'ready', 'test', 'checkin', 'report', 'reset', 'support', 'settings'];
 
-let info = { simulated: false, test: { defaultMinutes: 10, quickDemoMinutes: 4 }, reset: { inhaleSeconds: 4, exhaleSeconds: 6, cycles: 3 } };
+let info = { simulated: false, dataset: null, banner: null, preview: false, test: { defaultMinutes: 10, quickDemoMinutes: 4 }, reset: { inhaleSeconds: 4, exhaleSeconds: 6, cycles: 3 } };
 let consentGiven = false; // asked again on every launch, never stored
 let afterConsent = null;
 let baseline = null;
@@ -477,6 +478,8 @@ function showReport(report) {
   $('rSaid').textContent = report.selfReport ? `You said: ${report.selfReport}` : '';
   $('rPending').hidden = true;
   $('reportSim').hidden = !report.simulated || info.simulated; // the top banner already says it in a simulated replay
+  $('reportDemo').hidden = !report.dataset || !!info.dataset;
+  $('reportDemo').textContent = report.dataset ? `Demo input: this report was made from a public research video (${report.dataset}), not a live webcam. The person in the video was not taking this test.` : '';
   $('reportMsg').textContent = '';
   $('rTip').hidden = true;
   $('rBody').hidden = false;
@@ -511,36 +514,43 @@ $('pdfBtn').addEventListener('click', async () => {
 
 // ---------- Past practice tests ----------
 
+// Sessions from a demo video are listed apart ("Demo sessions") and never count as the student's own.
 async function renderPast() {
-  const list = await window.vitals.listSessions();
+  const all = await window.vitals.listSessions();
+  const demo = all.filter((s) => s.dataset);
+  const list = all.filter((s) => !s.dataset);
   $('pastBox').hidden = !list.length;
-  $('pastList').replaceChildren(...list.map((s) => {
-    const li = el('li');
-    const label = `${formatDate(s.startedAt)}: ${s.minutes}-minute test, ${s.score.correct} of ${s.score.total} correct${s.simulated ? ' (simulated data)' : ''}`;
-    const b = el('button', label, 'link');
-    b.addEventListener('click', async () => {
-      const r = await window.vitals.openSession(s.file);
-      if (!r.ok) { $('error').textContent = r.message; return; }
-      endResult = null;
-      showReport(r.report);
-    });
-    const del = el('button', 'Delete', 'link');
-    del.setAttribute('aria-label', `Delete the practice test from ${formatDate(s.startedAt)}`);
-    del.addEventListener('click', async () => {
-      if (!confirm(`Delete the practice test from ${formatDate(s.startedAt)}? This removes its answers and measurements from this computer and cannot be undone.`)) return;
-      await window.vitals.deleteSession(s.file);
-      renderPast();
-    });
-    li.append(b, del);
-    return li;
-  }));
+  $('pastList').replaceChildren(...list.map(pastItem));
+  $('demoBox').hidden = !demo.length;
+  $('demoList').replaceChildren(...demo.map(pastItem));
   renderProgress(list);
+}
+
+function pastItem(s) {
+  const li = el('li');
+  const label = `${formatDate(s.startedAt)}: ${s.minutes}-minute test, ${s.score.correct} of ${s.score.total} correct${s.simulated ? ' (simulated data)' : ''}${s.dataset ? ` (demo input: ${s.dataset})` : ''}`;
+  const b = el('button', label, 'link');
+  b.addEventListener('click', async () => {
+    const r = await window.vitals.openSession(s.file);
+    if (!r.ok) { $('error').textContent = r.message; return; }
+    endResult = null;
+    showReport(r.report);
+  });
+  const del = el('button', 'Delete', 'link');
+  del.setAttribute('aria-label', `Delete the practice test from ${formatDate(s.startedAt)}`);
+  del.addEventListener('click', async () => {
+    if (!confirm(`Delete the practice test from ${formatDate(s.startedAt)}? This removes its answers and measurements from this computer and cannot be undone.`)) return;
+    await window.vitals.deleteSession(s.file);
+    renderPast();
+  });
+  li.append(b, del);
+  return li;
 }
 
 // Real sessions only; simulated ones are never mixed in (shown apart, in a simulated replay only).
 function renderProgress(list) {
   const body = $('progressBody');
-  const real = list.filter((s) => !s.simulated).reverse();
+  const real = list.filter((s) => !s.simulated && !s.dataset).reverse();
   const sim = list.filter((s) => s.simulated).reverse();
   $('progressBox').hidden = false;
   body.replaceChildren();
@@ -598,7 +608,8 @@ function drawWave(id, width) {
   wave.forEach(([t, v], i) => {
     const x = c.width - ((t1 - t) / WAVE_WINDOW_US) * c.width;
     const y = c.height - 8 - ((v - min) / span) * (c.height - 16);
-    i ? g.lineTo(x, y) : g.moveTo(x, y);
+    // Never join the line across missing samples (a pause, or a video restart).
+    i && t - wave[i - 1][0] <= WAVE_MAX_STEP_US ? g.lineTo(x, y) : g.moveTo(x, y);
   });
   g.stroke();
 }
@@ -607,8 +618,17 @@ function drawWave(id, width) {
 
 let previewWanted = true;
 
+// The preview exists only for the live camera. A dataset video never shows its frames.
+const previewOffText = () => (info.dataset ? 'Preview not available for dataset video' : 'Preview not available in replay');
+
 function resetPreview(wanted) {
   previewWanted = wanted;
+  if (!info.preview) {
+    for (const c of $$('.preview')) c.hidden = true;
+    for (const m of $$('.previewMsg')) { m.hidden = false; m.textContent = previewOffText(); }
+    for (const b of $$('.previewBtn')) b.hidden = true;
+    return;
+  }
   for (const c of $$('.preview')) c.hidden = true;
   for (const m of $$('.previewMsg')) { m.hidden = false; m.textContent = wanted ? 'Camera preview will appear here' : 'Preview hidden'; }
   for (const b of $$('.previewBtn')) b.textContent = wanted ? 'Hide preview' : 'Show preview';
@@ -623,7 +643,7 @@ for (const b of $$('.previewBtn')) {
 
 window.vitals.on('vitals:frame', ({ width, height, data }) => {
   const box = current && $(current).querySelector('.previewBox');
-  if (!previewWanted || !box) return;
+  if (!info.preview || !previewWanted || !box) return;
   const c = box.querySelector('.preview');
   if (c.width !== width || c.height !== height) { c.width = width; c.height = height; }
   c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength), width, height), 0, 0);
@@ -655,7 +675,10 @@ $('deleteBtn').addEventListener('click', async () => {
 
 window.vitals.info().then((i) => {
   info = i;
-  $('simBanner').hidden = !i.simulated;
-  document.body.classList.toggle('sim', i.simulated);
+  // One banner on every screen: SIMULATED DATA for a made-up recording, or the demo video it plays.
+  if (i.banner) $('simBanner').textContent = i.banner;
+  $('simBanner').hidden = !i.banner;
+  document.body.classList.toggle('sim', !!i.banner);
+  resetPreview(previewWanted);
 });
 show('consent');

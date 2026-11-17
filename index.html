@@ -101,9 +101,9 @@
     .obs li { font-size: 17px; margin-bottom: 10px; }
     details.card summary { cursor: pointer; font-weight: 700; font-size: 17px; }
     #rExtras h3 { font-size: 16px; margin: 0 0 6px; }
-    #pastBox ul { list-style: none; padding: 0; margin: 8px 0 0; }
-    #pastBox li { margin: 0 0 6px; }
-    #pastBox button { text-align: left; }
+    #pastBox ul, #demoBox ul { list-style: none; padding: 0; margin: 8px 0 0; }
+    #pastBox li, #demoBox li { margin: 0 0 6px; }
+    #pastBox button, #demoBox button { text-align: left; }
     .lg-reset { background: rgba(86,180,233,0.28); outline: 1px solid #56B4E9; }
     /* 30-second reset */
     .resetStage { position: relative; height: 300px; display: grid; place-items: center; border-radius: 12px; background: #f6f8fb; overflow: hidden; margin: 12px 0; }
@@ -117,7 +117,7 @@
     #progressBody h3 { font-size: 16px; margin: 14px 0 4px; }
     .prog { display: grid; grid-template-columns: 1fr 220px; gap: 12px; align-items: center; }
     .prog p { margin: 0; }
-    #pastBox li { display: flex; gap: 12px; align-items: baseline; }
+    #pastBox li, #demoBox li { display: flex; gap: 12px; align-items: baseline; }
     @media print {
       body { background: #fff; padding: 0; }
       body.sim { padding-top: 0; }
@@ -167,6 +167,11 @@
     <div class="card" id="pastBox" hidden>
       <h2>Past practice tests</h2>
       <ul id="pastList"></ul>
+    </div>
+    <div class="card" id="demoBox" hidden>
+      <h2>Demo sessions</h2>
+      <p class="muted">Made from a public research video played through the measurement software, not from your webcam. These are not your measurements and are kept out of "Your progress".</p>
+      <ul id="demoList"></ul>
     </div>
     <div class="card" id="progressBox" hidden>
       <h2>Your progress</h2>
@@ -280,6 +285,7 @@
   <!-- Report: Your pressure map -->
   <section id="report" hidden>
     <div id="reportSim" class="simInline" role="note" hidden>SIMULATED DATA: this report was made from a made-up recording, not a measurement of anyone</div>
+    <div id="reportDemo" class="simInline" role="note" hidden></div>
     <div class="card">
       <h1>Your pressure map</h1>
       <p class="subtitle">How your body responded, question by question</p>

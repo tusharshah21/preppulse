@@ -12,6 +12,7 @@ const { performance } = require('perf_hooks');
 const { startSession, stopSession, REQUESTED_METRICS } = require('../lib/vitals');
 const { createRecorder } = require('../lib/recording');
 const { createDiagnostics } = require('../lib/diagnostics');
+const { datasetName } = require('../lib/source');
 
 const ROOT = path.join(__dirname, '..');
 try { process.loadEnvFile(path.join(ROOT, '.env')); } catch { /* checked below */ }
@@ -40,12 +41,13 @@ const stats = (xs) => {
 };
 const secs = (ms) => (ms == null ? 'never' : `${(ms / 1000).toFixed(1)} s`);
 
-// A video file is never the user's own measurement: mark it simulated, so a
-// replay of it gets the banner and stays out of real baselines and progress.
+// A video file is never the user's own measurement: mark it as dataset input, so a
+// replay of it gets the demo banner and stays out of real baselines and progress.
+const DATASET = VIDEO ? (datasetName(VIDEO, ROOT) || 'test video file') : null;
 const recorder = createRecorder({ source: 'probe', input: VIDEO ? 'file' : 'camera', requestedMetrics: METRICS,
-  ...(VIDEO && { simulated: true, notUserData: true }) });
+  ...(DATASET && { dataset: DATASET, notUserData: true }) });
 const diag = process.env.PREPPULSE_DIAGNOSTICS === '1'
-  ? createDiagnostics(Date.now(), { mode: VIDEO ? 'probe-video' : 'probe-camera', simulated: !!VIDEO, requestedMetrics: METRICS })
+  ? createDiagnostics(Date.now(), { mode: VIDEO ? 'probe-video' : 'probe-camera', dataset: DATASET, requestedMetrics: METRICS })
   : null;
 const statuses = [];
 const validation = new Map(); // code -> { count, hint }

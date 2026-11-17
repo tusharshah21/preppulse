@@ -76,6 +76,28 @@ $env:PREPPULSE_REPLAY = "data\recordings\simulated-test-session.json"; npm start
 
 Everything you see in replay mode is simulated data, not a measurement of anyone. Every screen shows a "SIMULATED DATA" banner, and sessions and baselines made this way are marked simulated and are never mixed with real ones.
 
+## Demo
+
+The demo video does not use a webcam. No live participant was recorded, so the demo plays a public research video through the SmartSpectra SDK instead: subject 3 of the UBFC-rPPG dataset (S. Bobbia, R. Macwan, Y. Benezeth, A. Mansouri, J. Dubois, "Unsupervised skin tissue segmentation for remote photoplethysmography", Pattern Recognition Letters, 2017). The pulse, breathing and waveform on screen are the SDK's readings of that video.
+
+The person in the video was not taking the PrepPulse test. So the report's observations in the demo do not reflect a real response to the questions; they only show how the app turns measured signals into a report.
+
+The app uses the live webcam by default. File input is a developer option, used only when `PREPPULSE_VIDEO` is set. While a dataset video plays:
+
+- every screen shows "Demo input: public research video (UBFC-rPPG, subject 3), not a live webcam";
+- the camera preview is off ("Preview not available for dataset video"), so no frames of the person in the video are shown;
+- its baseline and sessions are kept apart from real ones: they are listed under "Demo sessions" on home, and never used as your baseline or in "Your progress".
+
+How the video reaches the SDK: in SDK 3.5.0 on Windows, the SDK's own file reader cannot open video files, so ffmpeg decodes the file and each frame is passed to the SDK's custom frame input (`useCustomInput` and `sendFrame`), in memory only. The video is 61 seconds long; `PREPPULSE_VIDEO_LOOP=1` plays it again from the start when it ends, so calibration and a 4-minute test can finish. Each restart is shown on the report as "not measured: video restarted", the readings that would mix the end and the start of the video are left out, and the chart line is never joined across a restart.
+
+The video is not part of this repository. To run the demo yourself, download UBFC-rPPG DATASET_2 from the dataset page (https://sites.google.com/view/ybenezeth/ubfcrppg), put subject 3's `vid.avi` in `data/videos/ubfc-rppg/subject3/`, and start (PowerShell):
+
+```powershell
+$env:PREPPULSE_VIDEO = "data\videos\ubfc-rppg\subject3\vid.avi"; $env:PREPPULSE_VIDEO_LOOP = "1"; npm start
+```
+
+This needs ffmpeg on PATH (or `PREPPULSE_FFMPEG` set to `ffmpeg.exe`), an API key, and the network, like a camera session.
+
 ## Troubleshooting
 
 - **The app exits immediately with no window.** Your shell has `ELECTRON_RUN_AS_NODE` set (VS Code's terminal and some other Electron-based terminals do this). Clear it and start again: `set ELECTRON_RUN_AS_NODE=` in cmd, `Remove-Item Env:ELECTRON_RUN_AS_NODE` in PowerShell, or `unset ELECTRON_RUN_AS_NODE` in Git Bash.
@@ -127,6 +149,8 @@ Where the SDK code lives:
 - `baseline.json`: your latest calm baseline (pulse, breathing rate, HRV, and when it was measured).
 - `sessions/<date and time>.json`: one file per practice test, with question timings, your answers and score, the measured numbers (pulse, breathing and HRV readings with timestamps), measurement pauses, and your optional check-in answer.
 
+In demo or replay mode (see Demo), the baseline is kept in its own file (`baseline-dataset.json` or `baseline-simulated.json`), so it never replaces yours.
+
 No video, images or face data are stored. Nothing is uploaded.
 
 **Deleting.** Each past test on the home screen has a Delete button (with a confirmation). Settings has "Delete all my data", which removes the baseline and every session and clears the app's browser storage.
@@ -152,12 +176,13 @@ If practice tests feel like a lot, it can help to talk to someone.
 ## Development
 
 - Tests: `npm test` (Node's built-in test runner; synthetic inputs and the simulated recording on a virtual clock).
-- Developer switches are documented in [`CLAUDE.md`](CLAUDE.md) (`PREPPULSE_REPLAY`, `PREPPULSE_VIDEO`, `PREPPULSE_RECORD`, `PREPPULSE_DIAGNOSTICS`).
+- Developer switches are documented in [`CLAUDE.md`](CLAUDE.md) (`PREPPULSE_REPLAY`, `PREPPULSE_VIDEO`, `PREPPULSE_VIDEO_LOOP`, `PREPPULSE_RECORD`, `PREPPULSE_DIAGNOSTICS`).
 - Live session checklist: [`docs/live-session.md`](docs/live-session.md).
 
 ## Credits
 
 - Vital signs: [Presage SmartSpectra SDK](https://physiology.presagetech.com) (`@smartspectra/node-sdk`).
+- Demo input: UBFC-rPPG dataset, subject 3. S. Bobbia, R. Macwan, Y. Benezeth, A. Mansouri, J. Dubois, "Unsupervised skin tissue segmentation for remote photoplethysmography", Pattern Recognition Letters, 2017. The video is not included here.
 - The question bank (`questions/sample-test.json`) is original, written for PrepPulse, and not taken from any real exam paper.
 - Charts use the Okabe-Ito colour palette, chosen to be readable with colour-vision differences.
 - Built with [Electron](https://www.electronjs.org).

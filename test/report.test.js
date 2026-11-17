@@ -50,18 +50,44 @@ test('per-question median and peak change against the session baseline', () => {
   assert.strictEqual(r.questions[0].medianChange, 0);
 });
 
-test('"too brief to read": short on screen, or under 10 s of measured pulse', () => {
-  const s = makeSession({});
-  s.questions[1].timeMs = 12000; // on screen 12 s
-  // Q3 (120 to 180 s, analysed 126 to 186 s with the lag): a pause leaves only 8 s measured.
-  s.gaps.pauses = [{ start: 126000, end: 178000, reason: 'kChestNotVisible' }];
+test('short questions show a value labelled brief; "too brief to read" only with no usable reading', () => {
+  const s = makeSession({ pulse: () => 80 });
+  s.questions[1].timeMs = 12000; // on screen 12 s: a value, labelled brief
+  // Q3 (120 to 180 s, analysed 126 to 186 s with the lag): a pause leaves only 8 s measured: brief.
+  // Q5 (240 to 300 s, analysed 246 to 306 s): a pause leaves 3 s: not measured.
+  s.gaps.pauses = [{ start: 126000, end: 178000, reason: 'kChestNotVisible' }, { start: 246000, end: 303000, reason: 'kChestNotVisible' }];
   s.questions[2].coverage = 'partial';
   s.questions[3].coverage = 'none';
   s.questions[3].measuredMs = 0;
+  s.questions[4].coverage = 'partial';
+  s.questions[5].timeMs = 5000; // under 6 s on screen: too brief to read
   const r = buildReport(s);
   assert.strictEqual(r.questions[2].measuredSeconds, 8);
-  assert.deepStrictEqual(r.questions.slice(0, 4).map((q) => q.status), ['ok', 'too_brief', 'too_brief', 'not_measured']);
-  assert.strictEqual(r.questions[1].medianChange, null, 'no number for a brief question');
+  assert.deepStrictEqual(r.questions.map((q) => q.status), ['ok', 'ok', 'ok', 'not_measured', 'not_measured', 'too_brief']);
+  assert.deepStrictEqual(r.questions.map((q) => q.brief), [false, true, true, false, false, false]);
+  assert.strictEqual(r.questions[1].medianChange, 8, 'a brief question still shows its value');
+  assert.strictEqual(r.questions[5].medianChange, null);
+  // The header counts exactly what the tiles show.
+  assert.deepStrictEqual([r.header.readCount, r.header.briefCount], [3, 2]);
+});
+
+test('Run 1 shape: a 7 s rise on short questions is found, named by the tiles, and its settle time read', () => {
+  // Questions of 8 s; pulse +20 for 7 s (Q5's lag-shifted window), back at baseline 2 s later.
+  const pulse = (s) => (s >= 40 && s < 47 ? 92 : 72);
+  const r = buildReport(makeSession({ n: 10, secs: 8, pulse }));
+  assert.strictEqual(r.rises.length, 1);
+  assert.match(r.observations[0], /^Your pulse rose most around Q5 (and Q6 )?\(\+20 above your calm baseline\)\.$/);
+  assert.strictEqual(r.observations[1], 'After your biggest rise, your pulse took about 5 seconds to settle back near your calm baseline.');
+  assert.ok(r.questions.every((q) => q.status !== 'too_brief'));
+  // Brief values are never used for the hard vs easy comparison.
+  const hv = buildReport(makeSession({ n: 10, secs: 8, pulse, difficulty: (i) => (i < 5 ? 'easy' : 'hard') }));
+  assert.ok(!hv.observations.some((o) => /hard-tagged/.test(o)));
+});
+
+test('the breathing line never bridges a real gap (coverage.breathingMaxSpacingSeconds)', () => {
+  const r = buildReport(makeSession({ breathing: (s) => (s < 20 || s >= 60 ? 14 : null) }));
+  assert.ok(r.timeline.breathingRuns.length >= 2, 'split at the 40 s gap');
+  for (const run of r.timeline.breathingRuns) for (let i = 1; i < run.length; i++) assert.ok(run[i][0] - run[i - 1][0] <= CONFIG.coverage.breathingMaxSpacingSeconds * 1000);
 });
 
 test('gap labels: pauses are "not measured", the stretch after a pause is "pulse re-settling"', () => {
@@ -103,8 +129,8 @@ test('recovery time is measured from the peak of a noticeable rise', () => {
   assert.strictEqual(rise.peak, 16);
   assert.strictEqual(rise.peakT, 75000);
   assert.strictEqual(rise.recoveryMs, 35000, 'from the peak at 75 s to the first reading within 4 at 110 s');
-  // Too short to count (15 s), and a rise hidden by the end of the data.
-  assert.deepStrictEqual(findRises([run.map(([t]) => [t, t >= 60000 && t < 75000 ? 12 : 0])]), []);
+  // Too short to count (5 s, under riseMinSeconds), and a rise hidden by the end of the data.
+  assert.deepStrictEqual(findRises([run.map(([t]) => [t, t >= 60000 && t < 65000 ? 12 : 0])]), []);
   const unfinished = findRises([run.filter(([t]) => t < 105000)]);
   assert.strictEqual(unfinished[0].recoveryMs, null);
   const r = buildReport(makeSession({ n: 4, pulse: (s) => (s >= 60 && s < 100 ? 84 : 72) }));
@@ -136,9 +162,9 @@ test('observation: biggest rise names the question and what happened on it', () 
     pulse: (s) => (s >= 240 && s < 300 ? 88 : s >= 120 && s < 180 ? 82 : 72),
     events: [{ t: 245000, type: 'answer_changed', q: 4, option: 1, previous: 0 }, { t: 250000, type: 'answer_changed', q: 4, option: 2, previous: 1 }],
   }));
-  assert.strictEqual(r.observations[0], 'Your pulse rose most on Q5 (+16 above your calm baseline) and Q3 (+10). You changed your answer twice on Q5.');
+  assert.strictEqual(r.observations[0], 'Your pulse rose most around Q5 (+16 above your calm baseline). You changed your answer twice on Q5.');
   const flat = buildReport(makeSession({ pulse: () => 74 }));
-  assert.strictEqual(flat.observations[0], 'Your pulse stayed within 5 beats per minute of your calm baseline on every measured question.');
+  assert.strictEqual(flat.observations[0], 'Your pulse did not stay 8 or more beats per minute above your calm baseline for 6 seconds or longer in this test.');
   const few = buildReport(makeSession({ n: 3 }));
   assert.ok(!few.observations.some((o) => /rose most|stayed within/.test(o)), 'needs minMeasuredQuestions');
 });
@@ -229,7 +255,7 @@ test('observation priority: biggest rise, recovery, hard vs easy, breathing, res
 test('biggest-rise observation adds a second sentence only when something happened', () => {
   const pulse = (s) => (s >= 240 && s < 300 ? 88 : 72);
   const plain = buildReport(makeSession({ pulse })).observations[0];
-  assert.strictEqual(plain, 'Your pulse rose most on Q5 (+16 above your calm baseline).');
+  assert.strictEqual(plain, 'Your pulse rose most around Q5 (+16 above your calm baseline).');
   const skipped = buildReport(makeSession({ pulse, events: [{ t: 290000, type: 'skipped', q: 4 }] })).observations[0];
   assert.match(skipped, /You skipped Q5 at first and answered it later\.$/);
   const marked = buildReport(makeSession({ pulse, events: [{ t: 250000, type: 'marked_for_review', q: 4, marked: true }] })).observations[0];

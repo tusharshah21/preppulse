@@ -472,7 +472,8 @@ function showReport(report) {
   reportShown = report;
   reportHeader({ score: report.header.score, durationMs: report.header.durationMs });
   const h = report.header;
-  $('rMeasured').textContent = `${h.measuredFully} of ${h.questionCount} questions fully`;
+  // Counts exactly what the question tiles show.
+  $('rMeasured').textContent = `${h.readCount} of ${h.questionCount} questions${h.briefCount ? ` (${h.briefCount} brief)` : ''}`;
   $('rLag').textContent = String(report.pulseLagSeconds);
   $('rSaid').hidden = !report.selfReport;
   $('rSaid').textContent = report.selfReport ? `You said: ${report.selfReport}` : '';

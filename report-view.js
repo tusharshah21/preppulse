@@ -30,7 +30,7 @@
   }
 
   function pulseText(q) {
-    if (q.status === 'ok') return `median ${signed(q.medianChange)}, peak ${signed(q.peakChange)} compared with your calm baseline`;
+    if (q.status === 'ok') return `median ${signed(q.medianChange)}, peak ${signed(q.peakChange)} compared with your calm baseline${q.brief ? ' (brief: a short time on screen or a few seconds of steady pulse, so read it loosely)' : ''}`;
     if (q.status === 'not_measured') return q.notMeasuredBecause.length ? `not measured: ${q.notMeasuredBecause.join(', ')}` : 'not measured';
     return STATUS[q.status];
   }
@@ -185,6 +185,7 @@
       b.dataset.q = q.q;
       b.append(el('span', `Q${q.q + 1}`, 'tileNum'));
       b.append(el('span', q.status === 'ok' ? signed(q.medianChange) : STATUS[q.status], q.status === 'ok' ? 'tileVal' : 'tileNote'));
+      if (q.brief) b.append(el('span', 'brief', 'tileNote'));
       if (q.correct === false) {
         const i = el('span', '×', 'tileWrong');
         i.title = 'answered incorrectly';

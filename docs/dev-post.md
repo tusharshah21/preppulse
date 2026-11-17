@@ -20,17 +20,17 @@ It is a desktop app (Electron and Node), it runs entirely on your machine, and i
 
 ## Demo
 
-{% embed VIDEO_LINK_PLACEHOLDER %}
+🎬 **[Watch the demo video](PASTE_VIDEO_LINK_HERE)**
 
 Every screenshot below is from a live webcam session, measured with the SmartSpectra SDK. None of them use simulated data.
 
-![Calibration: learning your calm baseline, with the live pulse and breathing trace](SCREENSHOT_CALIBRATION_PLACEHOLDER)
+**[SCREENSHOT: calibration, learning your calm baseline, with the live pulse and breathing trace]**
 
-![The mock test screen, with the reset button in the header](SCREENSHOT_TEST_PLACEHOLDER)
+**[SCREENSHOT: the mock test screen, with the reset button in the header]**
 
-![Your pressure map: pulse timeline, question strip and observations](SCREENSHOT_PRESSURE_MAP_PLACEHOLDER)
+**[SCREENSHOT: your pressure map, with the pulse timeline, question strip and observations]**
 
-![The 30-second reset, with the live breathing trace behind the circle](SCREENSHOT_RESET_PLACEHOLDER)
+**[SCREENSHOT: the 30-second reset, with the live breathing trace behind the circle]**
 
 ## Code
 
@@ -100,7 +100,7 @@ The arterial pressure trace is requested only because the SDK delivers no pulse 
 
 I built PrepPulse with Claude Code. A curated agent session showing how it came together, including the live-run analysis and retuning, will be embedded here.
 
-{% agent_session AGENT_SESSION_PLACEHOLDER %}
+**[AGENT SESSION EMBED: replace this line with the agent_session tag once the session is saved]**
 
 ---
 

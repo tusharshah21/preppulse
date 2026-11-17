@@ -3,6 +3,8 @@
 // lib/report.js with hand-built sessions (synthetic, all times ms since test start).
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
 const { buildReport, labelGaps, findRises, segments } = require('../lib/report');
 const CONFIG = require('../lib/config');
 
@@ -172,5 +174,14 @@ test('no banned or judging words in any generated text', () => {
   for (const s of variants) {
     const text = allText(buildReport(s));
     assert.ok(!BANNED.test(text), `banned word in: ${text.match(BANNED)?.[0]} :: ${text}`);
+  }
+});
+
+test('the window UI text avoids the banned words', () => {
+  for (const f of ['index.html', 'renderer.js', 'report-view.js']) {
+    const p = path.join(__dirname, '..', f);
+    if (!fs.existsSync(p)) continue;
+    const m = fs.readFileSync(p, 'utf8').match(/\b(stress\w*|anxi\w*|panic\w*|nervous\w*)\b/i);
+    assert.strictEqual(m, null, `${f} contains "${m?.[0]}"`);
   }
 });

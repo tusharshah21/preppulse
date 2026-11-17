@@ -3,7 +3,7 @@
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const WAVE_WINDOW_US = 20e6; // sample timestamps are epoch microseconds
-const SCREENS = ['consent', 'home', 'calibrate', 'ready', 'test', 'end', 'settings'];
+const SCREENS = ['consent', 'home', 'calibrate', 'ready', 'test', 'report', 'settings'];
 
 let info = { simulated: false, test: { defaultMinutes: 10, quickDemoMinutes: 4 } };
 let consentGiven = false; // asked again on every launch, never stored
@@ -16,7 +16,7 @@ let current = null; // visible screen
 function show(id) {
   current = id;
   for (const s of SCREENS) $(s).hidden = s !== id;
-  $('main').classList.toggle('wide', id === 'test');
+  $('main').classList.toggle('wide', id === 'test' || id === 'report');
 }
 
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
@@ -45,6 +45,7 @@ async function goHome(message = '') {
   $('calibrateBtn').textContent = baseline ? 'Redo calibration' : 'Learn my calm baseline';
   $('error').textContent = message;
   show('home');
+  renderPast();
 }
 
 // ---------- Consent ----------
@@ -250,51 +251,88 @@ async function finishTest(reason) {
 // Main also ends the test when time is up, in case the window missed it.
 window.vitals.on('test:ended', (r) => { if (T) { clearInterval(T.timer); T = null; showEnd(r); } });
 
-// ---------- End ----------
+// ---------- Report: Your pressure map ----------
 
 let endResult = null;
+let reportShown = null; // report object on screen
 
+function reportHeader({ score, durationMs }) {
+  $('rScore').textContent = `${score.correct} of ${score.total} correct`;
+  $('rAttempted').textContent = `${score.attempted} answered`;
+  $('rTime').textContent = mmss(durationMs);
+}
+
+// Right after the test: score and time; the rest once the session is saved.
 function showEnd(r) {
-  if (!r || (current === 'end' && endResult)) return;
+  if (!r || (current === 'report' && endResult)) return;
   endResult = r;
-  $('endReason').textContent = r.durationMs >= 0 ? `Time used: ${mmss(r.durationMs)}.` : '';
-  $('endScore').textContent = `${r.score.correct} of ${r.score.total} correct`;
-  $('endAttempted').textContent = `You answered ${r.score.attempted} of ${r.score.total} questions.`;
-  $('endCoverage').textContent = 'Finishing the last few seconds of measurement...';
-  renderEndRows(r.perQuestion, null);
-  show('end');
+  reportShown = null;
+  reportHeader(r);
+  $('rMeasured').textContent = 'checking...';
+  $('rPending').hidden = false;
+  $('rPending').textContent = 'Finishing the last few seconds of measurement...';
+  $('rBody').hidden = true;
+  $('reportSim').hidden = true;
+  show('report');
 }
 
-function measurementText(row) {
-  if (!row) return 'checking...';
-  const why = row.notMeasuredBecause.length ? ` (not measured: ${row.notMeasuredBecause.join(', ')})` : '';
-  if (row.coverage === 'full') return 'measured fully';
-  if (row.coverage === 'partial') return `measured partly${why}`;
-  if (row.coverage === 'none') return `not measured${why ? `: ${row.notMeasuredBecause.join(', ')}` : ''}`;
-  return 'not shown';
-}
-
-function renderEndRows(perQuestion, saved) {
-  const body = $('endRows');
-  body.replaceChildren();
-  for (const r of perQuestion) {
-    const tr = el('tr');
-    const ans = r.answer == null ? 'not answered' : `${'ABCD'[r.answer]}, ${r.correct ? 'correct' : 'not correct'}`;
-    const m = saved ? measurementText(saved[r.q]) : 'checking...';
-    for (const text of [r.q + 1, r.subject, r.timeMs ? mmss(r.timeMs) : 'not shown', ans, r.timeMs ? m : '']) tr.append(el('td', String(text)));
-    body.append(tr);
-  }
+function showReport(report) {
+  reportShown = report;
+  reportHeader({ score: report.header.score, durationMs: report.header.durationMs });
+  const h = report.header;
+  $('rMeasured').textContent = `${h.measuredFully} of ${h.questionCount} questions fully`;
+  $('rPending').hidden = true;
+  $('reportSim').hidden = !report.simulated || info.simulated; // the top banner already says it in a simulated replay
+  $('reportMsg').textContent = '';
+  $('rTip').hidden = true;
+  $('rBody').hidden = false;
+  show('report');
+  window.ReportView.render(report, {
+    chartCard: $('rChartCard'), pulseChart: $('rPulseChart'), breathChart: $('rBreathChart'), tip: $('rTip'),
+    pulseSummary: $('pulse-sum'), breathSummary: $('breath-sum'), strip: $('rStrip'), obs: $('rObs'), closing: $('rClosing'),
+    extras: $('rExtras'), resetBtn: $('resetBtn'),
+  }, { onReset: () => { $('reportMsg').textContent = 'The 30-second reset is coming in the next step.'; } });
 }
 
 window.vitals.on('test:saved', (s) => {
   if (!endResult) return;
-  if (!s.ok) { $('endCoverage').textContent = s.message; return; }
-  const c = s.coverage;
-  $('endCoverage').textContent = `Measurement: ${c.full} question${c.full === 1 ? '' : 's'} measured fully, ${c.partial} partly, ${c.none} not at all${c.not_shown ? ` (${c.not_shown} not shown)` : ''}. Saved on this computer.`;
-  renderEndRows(endResult.perQuestion, s.questions);
+  if (!s.ok) { $('rPending').textContent = s.message; return; }
+  showReport(s.report);
 });
 
-$('endHomeBtn').addEventListener('click', () => { endResult = null; goHome(); });
+$('reportHomeBtn').addEventListener('click', () => { endResult = null; reportShown = null; goHome(); });
+
+$('pdfBtn').addEventListener('click', async () => {
+  if (!reportShown) return;
+  const details = $('rMeaning');
+  const wasOpen = details.open;
+  details.open = true; // the PDF includes the explanation
+  $('reportMsg').textContent = '';
+  const res = await window.vitals.saveReportPdf(reportShown.startedAt);
+  details.open = wasOpen;
+  if (res.ok) $('reportMsg').textContent = `Saved ${res.name}.`;
+  else if (!res.canceled) $('reportMsg').textContent = `Could not save the PDF: ${res.message}`;
+});
+
+// ---------- Past practice tests ----------
+
+async function renderPast() {
+  const list = await window.vitals.listSessions();
+  $('pastBox').hidden = !list.length;
+  $('pastList').replaceChildren(...list.map((s) => {
+    const li = el('li');
+    const label = `${formatDate(s.startedAt)}: ${s.minutes}-minute test, ${s.score.correct} of ${s.score.total} correct${s.simulated ? ' (simulated data)' : ''}`;
+    const b = el('button', label, 'link');
+    b.addEventListener('click', async () => {
+      const r = await window.vitals.openSession(s.file);
+      if (!r.ok) { $('error').textContent = r.message; return; }
+      endResult = null;
+      showReport(r.report);
+    });
+    li.append(b);
+    return li;
+  }));
+}
 
 // ---------- Live data on the calibration screen ----------
 

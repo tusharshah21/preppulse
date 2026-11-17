@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
 const CONFIG = require('./lib/config');
 const { startSession, stopSession, downscaleToRGBA, REQUESTED_METRICS } = require('./lib/vitals');
 const { createRecorder, loadRecording, play } = require('./lib/recording');
@@ -10,6 +10,7 @@ const { computeBaseline } = require('./lib/baseline');
 const { createCalibration, pausedHint } = require('./lib/calibration');
 const { loadQuestions, publicView } = require('./lib/questions');
 const { createTestSession } = require('./lib/session');
+const { buildReport } = require('./lib/report');
 
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .env is reported on start */ }
 
@@ -229,7 +230,7 @@ async function finalizeTest() {
     fs.mkdirSync(sessionsDir(), { recursive: true });
     const file = path.join(sessionsDir(), `${full.startedAt.replace(/[:.]/g, '-')}.json`);
     fs.writeFileSync(file, JSON.stringify(full));
-    send('test:saved', { ok: true, file: path.basename(file), coverage: full.coverage, questions: full.questions });
+    send('test:saved', { ok: true, file: path.basename(file), report: buildReport(full) });
   } catch (e) {
     send('test:saved', { ok: false, message: `Could not save the session: ${e.message}` });
   }
@@ -239,6 +240,55 @@ async function finalizeTest() {
 function discardTest() {
   if (test) clearTimeout(test.finalizeTimer);
   test = null;
+}
+
+// ---------- Past sessions and reports ----------
+
+const SESSION_FILE = /^[0-9TZ-]+\.json$/;
+
+// ponytail: parses every session file for the list; add an index file if there are hundreds.
+function listSessions() {
+  let files = [];
+  try { files = fs.readdirSync(sessionsDir()).filter((f) => SESSION_FILE.test(f)); } catch { return []; }
+  const out = [];
+  for (const file of files) {
+    try {
+      const s = JSON.parse(fs.readFileSync(path.join(sessionsDir(), file), 'utf8'));
+      if (s.format !== 'preppulse-session/1') continue;
+      out.push({ file, startedAt: s.startedAt, minutes: s.settings?.minutes, score: s.score, simulated: !!s.source?.simulated });
+    } catch { /* unreadable file: skip */ }
+  }
+  return out.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
+}
+
+function openSession(file) {
+  // The name comes from the window: only plain session file names inside sessions/.
+  if (typeof file !== 'string' || !SESSION_FILE.test(file)) return { ok: false, message: 'Not a session file.' };
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(sessionsDir(), file), 'utf8'));
+    if (s.format !== 'preppulse-session/1') return { ok: false, message: 'Not a session file.' };
+    return { ok: true, report: buildReport(s) };
+  } catch (e) {
+    return { ok: false, message: `Could not open that session: ${e.message}` };
+  }
+}
+
+// Saves only where the student picks in the save dialog; nothing is written otherwise.
+async function saveReportPdf(startedAt) {
+  const day = typeof startedAt === 'string' && /^\d{4}-\d{2}-\d{2}/.test(startedAt) ? startedAt.slice(0, 10) : 'report';
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Save report as PDF',
+    defaultPath: path.join(app.getPath('documents'), `PrepPulse pressure map ${day}.pdf`),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+  try {
+    const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+    fs.writeFileSync(res.filePath, pdf);
+    return { ok: true, name: path.basename(res.filePath) };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
 }
 
 // ---------- Data ----------
@@ -284,6 +334,9 @@ app.whenReady().then(() => {
   handle('test:start', startTest);
   handle('test:event', (e) => !!test && !test.result && test.session.event(Date.now(), e));
   handle('test:end', (reason) => endTest(reason === 'time_up' ? 'time_up' : 'submitted'));
+  handle('sessions:list', listSessions);
+  handle('sessions:open', openSession);
+  handle('report:pdf', saveReportPdf);
   handle('data:info', dataInfo);
   handle('data:deleteAll', deleteAllData);
 });

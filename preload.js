@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('vitals', {
   startTest: (opts) => ipcRenderer.invoke('test:start', opts),
   testEvent: (e) => ipcRenderer.invoke('test:event', e),
   endTest: (reason) => ipcRenderer.invoke('test:end', reason),
+  listSessions: () => ipcRenderer.invoke('sessions:list'),
+  openSession: (file) => ipcRenderer.invoke('sessions:open', file),
+  saveReportPdf: (startedAt) => ipcRenderer.invoke('report:pdf', startedAt),
   dataInfo: () => ipcRenderer.invoke('data:info'),
   deleteAllData: () => ipcRenderer.invoke('data:deleteAll'),
   on: (channel, cb) => {

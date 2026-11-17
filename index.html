@@ -65,7 +65,54 @@
     .legend span { display: inline-block; width: 18px; height: 18px; border-radius: 4px; vertical-align: middle; margin-right: 8px; position: relative; }
     table { border-collapse: collapse; width: 100%; font-size: 15px; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e6ec; vertical-align: top; }
-    @media (max-width: 900px) { .calib, .stats, .testGrid { grid-template-columns: 1fr; } }
+    /* Report */
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .subtitle { font-size: 18px; color: #4a5468; margin: 0 0 16px; }
+    .headStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .mid { font-size: 22px; font-weight: 600; }
+    .simInline { background: #5b3fa8; color: #fff; font-weight: 700; padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; text-align: center; }
+    .chartCard { position: relative; }
+    .chartCard h2.sub { font-size: 16px; margin-top: 14px; }
+    .chartSvg { display: block; overflow: visible; }
+    .chartSvg .axis { font-size: 14px; fill: #5b6475; }
+    .chartSvg .axis.strong { fill: #1d2330; font-weight: 600; }
+    .chartSvg .bandLabel { font-size: 13px; fill: #4a5468; font-weight: 600; }
+    .chartSvg .band { cursor: pointer; }
+    .chartSvg .band:hover { fill: #e8eef8; }
+    .chartSvg .band.selected { fill: #dce8f6; stroke: #0072B2; stroke-width: 2; }
+    .chartLegend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: #4a5468; margin-top: 10px; }
+    .chartLegend i { display: inline-block; width: 18px; height: 12px; margin-right: 6px; vertical-align: middle; }
+    .lg-line { border-top: 3px solid #0072B2; height: 0 !important; }
+    .lg-breath { border-top: 3px solid #009E73; height: 0 !important; }
+    .lg-base { border-top: 2px dashed #33405a; height: 0 !important; }
+    .lg-hatch { background: repeating-linear-gradient(45deg, #8a94a6 0 3px, #eef0f4 3px 7px); }
+    .lg-resettle { background: #f3f4f7; outline: 1px dashed #8a94a6; }
+    .lg-changed { width: 10px !important; height: 10px !important; background: #E69F00; transform: rotate(45deg); }
+    .lg-skipped { width: 10px !important; height: 10px !important; border: 2px solid #5b6475; border-radius: 50%; }
+    .lg-marked { width: 0 !important; height: 0 !important; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 11px solid #CC79A7; }
+    .tip { position: absolute; z-index: 5; width: 290px; background: #1d2330; color: #f6f7f9; border-radius: 8px; padding: 10px 12px; font-size: 14px; line-height: 1.5; pointer-events: none; box-shadow: 0 4px 14px #0003; }
+    .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+    .tile { background: #f4f6fa; color: #1d2330; border-radius: 10px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; box-shadow: inset 0 0 0 1px #dfe3ea; }
+    .tile.selected { box-shadow: inset 0 0 0 3px #0072B2; background: #e8f0fa; }
+    .tileNum { font-weight: 700; font-size: 16px; }
+    .tileVal { font-size: 20px; font-weight: 600; color: #0b4f7c; }
+    .tileNote { font-size: 13px; color: #5b6475; text-align: center; line-height: 1.25; }
+    .tileWrong { position: absolute; top: 4px; right: 7px; color: #5b6475; font-weight: 700; }
+    .obs li { font-size: 17px; margin-bottom: 10px; }
+    details.card summary { cursor: pointer; font-weight: 700; font-size: 17px; }
+    #rExtras h3 { font-size: 16px; margin: 0 0 6px; }
+    #pastBox ul { list-style: none; padding: 0; margin: 8px 0 0; }
+    #pastBox li { margin: 0 0 6px; }
+    #pastBox button { text-align: left; }
+    @media print {
+      body { background: #fff; padding: 0; }
+      body.sim { padding-top: 0; }
+      #simBanner { position: static; }
+      .noPrint, .tip { display: none !important; }
+      .card { box-shadow: none; border: 1px solid #dfe3ea; break-inside: avoid; }
+      main, main.wide { max-width: none; }
+    }
+    @media (max-width: 900px) { .calib, .stats, .testGrid, .headStats { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -100,6 +147,10 @@
         <button id="settingsBtn" class="secondary">Settings</button>
       </div>
       <p id="error" class="error" role="alert"></p>
+    </div>
+    <div class="card" id="pastBox" hidden>
+      <h2>Past practice tests</h2>
+      <ul id="pastList"></ul>
     </div>
   </section>
 
@@ -203,24 +254,65 @@
     </div>
   </section>
 
-  <!-- End -->
-  <section id="end" hidden>
+  <!-- Report: Your pressure map -->
+  <section id="report" hidden>
+    <div id="reportSim" class="simInline" role="note" hidden>SIMULATED DATA: this report was made from a made-up recording, not a measurement of anyone</div>
     <div class="card">
-      <h1>Test finished</h1>
-      <p id="endReason" class="muted"></p>
-      <p class="big" id="endScore"></p>
-      <p id="endAttempted"></p>
-      <p id="endCoverage" role="status">Finishing the last few seconds of measurement...</p>
-      <p><strong>Your stress map is coming in the next step.</strong></p>
+      <h1>Your pressure map</h1>
+      <p class="subtitle">How your body responded, question by question</p>
+      <div class="headStats">
+        <div><div class="muted">Score</div><div class="big" id="rScore"></div><div class="muted" id="rAttempted"></div></div>
+        <div><div class="muted">Time used</div><div class="big" id="rTime"></div></div>
+        <div><div class="muted">Measured</div><div class="mid" id="rMeasured">checking...</div></div>
+      </div>
+      <p id="rPending" role="status">Finishing the last few seconds of measurement...</p>
     </div>
-    <div class="card">
-      <h2>Time per question</h2>
-      <table>
-        <thead><tr><th>#</th><th>Subject</th><th>Time</th><th>Your answer</th><th>Measurement</th></tr></thead>
-        <tbody id="endRows"></tbody>
-      </table>
+    <div id="rBody" hidden>
+      <div class="card chartCard" id="rChartCard">
+        <h2>Pulse, compared with your calm baseline</h2>
+        <p class="muted">The line shows how far your pulse was above or below your calm baseline (0). Bands are questions; hover or tap one for details.</p>
+        <p class="sr-only" id="pulse-sum"></p>
+        <div id="rPulseChart"></div>
+        <h2 class="sub">Breathing rate (breaths per minute)</h2>
+        <p class="sr-only" id="breath-sum"></p>
+        <div id="rBreathChart"></div>
+        <div class="chartLegend" aria-hidden="true">
+          <span><i class="lg-line"></i>Pulse change</span>
+          <span><i class="lg-breath"></i>Breathing rate</span>
+          <span><i class="lg-base"></i>Your calm baseline</span>
+          <span><i class="lg-hatch"></i>Not measured</span>
+          <span><i class="lg-resettle"></i>Pulse re-settling</span>
+          <span><i class="lg-changed"></i>Answer changed</span>
+          <span><i class="lg-skipped"></i>Skipped</span>
+          <span><i class="lg-marked"></i>Marked for review</span>
+        </div>
+        <div id="rTip" class="tip" role="status" hidden></div>
+      </div>
+      <div class="card">
+        <h2>Question by question</h2>
+        <div id="rStrip" class="strip"></div>
+      </div>
+      <div class="card">
+        <h2>What we noticed</h2>
+        <ul id="rObs" class="obs"></ul>
+        <p class="muted" id="rClosing"></p>
+      </div>
+      <div class="card" id="rExtras" hidden></div>
+      <details class="card" id="rMeaning">
+        <summary>What do these numbers mean?</summary>
+        <p><strong>Change from your calm baseline.</strong> Before the test, PrepPulse learned your own calm pulse and breathing. A value like +11 means your pulse was 11 beats per minute above that calm level at that moment. It is only compared with you, never with anyone else.</p>
+        <p><strong>Why some parts were not measured.</strong> The camera needs to see your face and upper chest. When you lean in or move out of view, measurement pauses. Right after a pause the pulse reading needs a few seconds to settle again. Those moments are shown as gaps; nothing is filled in or guessed.</p>
+        <p><strong>A pulse value covers the last few seconds.</strong> Each reading is worked out from roughly the previous 12 seconds, so the start of a question can still reflect the end of the one before.</p>
+        <p><strong>This is a camera estimate, not a medical measurement.</strong> PrepPulse is not a medical device and does not diagnose anything.</p>
+        <p><strong>It cannot tell why your body responded.</strong> A rise can come from many things: a hard question, the clock, how you are sitting, or nothing in particular. The map shows when it happened, not why.</p>
+      </details>
+      <div class="row noPrint">
+        <button id="resetBtn">Practice a 30-second reset</button>
+        <button id="reportHomeBtn" class="secondary">Back to home</button>
+        <button id="pdfBtn" class="secondary">Save report as PDF</button>
+      </div>
+      <p id="reportMsg" class="muted noPrint" role="status"></p>
     </div>
-    <button id="endHomeBtn">Back to home</button>
   </section>
 
   <!-- Settings -->
@@ -237,6 +329,7 @@
     <p id="deleteMsg" role="status"></p>
   </section>
 </main>
+<script src="report-view.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

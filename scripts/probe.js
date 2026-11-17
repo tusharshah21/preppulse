@@ -11,6 +11,7 @@ const path = require('path');
 const { performance } = require('perf_hooks');
 const { startSession, stopSession, REQUESTED_METRICS } = require('../lib/vitals');
 const { createRecorder } = require('../lib/recording');
+const { createDiagnostics } = require('../lib/diagnostics');
 
 const ROOT = path.join(__dirname, '..');
 try { process.loadEnvFile(path.join(ROOT, '.env')); } catch { /* checked below */ }
@@ -39,7 +40,13 @@ const stats = (xs) => {
 };
 const secs = (ms) => (ms == null ? 'never' : `${(ms / 1000).toFixed(1)} s`);
 
-const recorder = createRecorder({ source: 'probe', input: VIDEO ? 'file' : 'camera', requestedMetrics: METRICS });
+// A video file is never the user's own measurement: mark it simulated, so a
+// replay of it gets the banner and stays out of real baselines and progress.
+const recorder = createRecorder({ source: 'probe', input: VIDEO ? 'file' : 'camera', requestedMetrics: METRICS,
+  ...(VIDEO && { simulated: true, notUserData: true }) });
+const diag = process.env.PREPPULSE_DIAGNOSTICS === '1'
+  ? createDiagnostics(Date.now(), { mode: VIDEO ? 'probe-video' : 'probe-camera', simulated: !!VIDEO, requestedMetrics: METRICS })
+  : null;
 const statuses = [];
 const validation = new Map(); // code -> { count, hint }
 const errors = [];
@@ -55,6 +62,13 @@ const firstStableMedia = { pulse: null, breathing: null, hrv: null };
 
 function emit(channel, data) {
   recorder.add(channel, data);
+  if (diag) {
+    const t = Date.now();
+    if (channel === 'vitals:status') diag.onStatus(t, data);
+    else if (channel === 'vitals:validation') diag.onValidation(t, data);
+    else if (channel === 'vitals:error') diag.onError(t, data);
+    else if (channel === 'vitals:metrics') diag.onMetrics(t, data);
+  }
   const now = performance.now() - t0;
   if (channel === 'vitals:status') {
     statuses.push(`${data}@${secs(now)}`);
@@ -216,5 +230,14 @@ function summary() {
     file = target;
   }
   console.log(`Recording saved: ${path.relative(ROOT, file)} (${recorder.events.length} events)`);
+  if (diag) {
+    const ddir = path.join(ROOT, 'data', 'diagnostics');
+    fs.mkdirSync(ddir, { recursive: true });
+    const dfile = path.join(ddir, `${OUT || 'probe'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    const d = { ...diag.summary(Date.now()), ...(VIDEO && { notUserData: true }) };
+    fs.writeFileSync(dfile, JSON.stringify(d, null, 2));
+    console.log(`Diagnostics saved: ${path.relative(ROOT, dfile)}`);
+    console.log(JSON.stringify(d, null, 2));
+  }
   process.exit(0);
 })();

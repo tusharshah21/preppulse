@@ -104,6 +104,20 @@
     #pastBox ul { list-style: none; padding: 0; margin: 8px 0 0; }
     #pastBox li { margin: 0 0 6px; }
     #pastBox button { text-align: left; }
+    .lg-reset { background: rgba(86,180,233,0.28); outline: 1px solid #56B4E9; }
+    /* 30-second reset */
+    .resetStage { position: relative; height: 300px; display: grid; place-items: center; border-radius: 12px; background: #f6f8fb; overflow: hidden; margin: 12px 0; }
+    #resetWave { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.22; }
+    .breathShape { position: absolute; width: 220px; height: 220px; border-radius: 50%; background: #56B4E9; opacity: 0.55; transform: scale(0.45); transition-property: transform; transition-timing-function: ease-in-out; }
+    #resetCue { position: relative; font-size: 28px; font-weight: 700; margin: 0; }
+    #resetCount { font-variant-numeric: tabular-nums; }
+    .choices { display: grid; gap: 10px; max-width: 420px; margin: 16px 0; }
+    .choices button { text-align: left; font-size: 18px; }
+    .support li { margin-bottom: 10px; font-size: 17px; }
+    #progressBody h3 { font-size: 16px; margin: 14px 0 4px; }
+    .prog { display: grid; grid-template-columns: 1fr 220px; gap: 12px; align-items: center; }
+    .prog p { margin: 0; }
+    #pastBox li { display: flex; gap: 12px; align-items: baseline; }
     @media print {
       body { background: #fff; padding: 0; }
       body.sim { padding-top: 0; }
@@ -144,13 +158,19 @@
       <div class="row">
         <button id="practiceBtn">Start practice test</button>
         <button id="calibrateBtn" class="secondary">Learn my calm baseline</button>
+        <button id="homeResetBtn" class="secondary">Take a 30-second reset</button>
         <button id="settingsBtn" class="secondary">Settings</button>
       </div>
+      <p><button class="link supportLink">Need to talk to someone?</button></p>
       <p id="error" class="error" role="alert"></p>
     </div>
     <div class="card" id="pastBox" hidden>
       <h2>Past practice tests</h2>
       <ul id="pastList"></ul>
+    </div>
+    <div class="card" id="progressBox" hidden>
+      <h2>Your progress</h2>
+      <div id="progressBody"></div>
     </div>
   </section>
 
@@ -225,6 +245,7 @@
     <div class="card testTop">
       <strong id="testTitle">Practice test</strong>
       <span class="indicator" data-state="starting">Starting camera...</span>
+      <button id="testResetBtn" class="secondary">Take a 30-second reset</button>
       <span class="countdown" aria-live="off">Time left <span id="countdown">10:00</span></span>
     </div>
     <div class="testGrid">
@@ -265,6 +286,7 @@
         <div><div class="muted">Time used</div><div class="big" id="rTime"></div></div>
         <div><div class="muted">Measured</div><div class="mid" id="rMeasured">checking...</div></div>
       </div>
+      <p id="rSaid" class="muted" hidden></p>
       <p id="rPending" role="status">Finishing the last few seconds of measurement...</p>
     </div>
     <div id="rBody" hidden>
@@ -285,6 +307,7 @@
           <span><i class="lg-changed"></i>Answer changed</span>
           <span><i class="lg-skipped"></i>Skipped</span>
           <span><i class="lg-marked"></i>Marked for review</span>
+          <span><i class="lg-reset"></i>30-second reset</span>
         </div>
         <div id="rTip" class="tip" role="status" hidden></div>
       </div>
@@ -302,7 +325,7 @@
         <summary>What do these numbers mean?</summary>
         <p><strong>Change from your calm baseline.</strong> Before the test, PrepPulse learned your own calm pulse and breathing. A value like +11 means your pulse was 11 beats per minute above that calm level at that moment. It is only compared with you, never with anyone else.</p>
         <p><strong>Why some parts were not measured.</strong> The camera needs to see your face and upper chest. When you lean in or move out of view, measurement pauses. Right after a pause the pulse reading needs a few seconds to settle again. Those moments are shown as gaps; nothing is filled in or guessed.</p>
-        <p><strong>A pulse value covers the last few seconds.</strong> Each reading is worked out from roughly the previous 12 seconds, so the start of a question can still reflect the end of the one before.</p>
+        <p><strong>A pulse value covers the last few seconds.</strong> Each reading is worked out from roughly the previous 12 seconds, so the start of a question can still reflect the end of the one before. To allow for this, each question is read over its time on screen shifted about 6 seconds later.</p>
         <p><strong>This is a camera estimate, not a medical measurement.</strong> PrepPulse is not a medical device and does not diagnose anything.</p>
         <p><strong>It cannot tell why your body responded.</strong> A rise can come from many things: a hard question, the clock, how you are sitting, or nothing in particular. The map shows when it happened, not why.</p>
       </details>
@@ -312,6 +335,55 @@
         <button id="pdfBtn" class="secondary">Save report as PDF</button>
       </div>
       <p id="reportMsg" class="muted noPrint" role="status"></p>
+    </div>
+  </section>
+
+  <!-- How did that test feel? (optional) -->
+  <section id="checkin" class="card" hidden>
+    <h1>How did that test feel?</h1>
+    <p class="muted">Optional. Your answer is saved only with this test on this computer, and is deleted with it.</p>
+    <div class="choices">
+      <button class="secondary" data-feeling="fine">Fine</button>
+      <button class="secondary" data-feeling="a_bit_tough">A bit tough</button>
+      <button class="secondary" data-feeling="really_overwhelming">Really overwhelming</button>
+      <button class="link" data-feeling="skipped">Skip</button>
+    </div>
+  </section>
+
+  <!-- 30-second reset -->
+  <section id="reset" class="card" hidden>
+    <h1>30-second reset</h1>
+    <p>Breathe in as the circle grows and out as it shrinks. There is nothing to get right.</p>
+    <p id="resetTestNote" hidden><strong>The test timer keeps running</strong> (time left <span id="resetTimeLeft"></span>). In the real exam you can do this with your eyes on the paper, no app needed.</p>
+    <div class="resetStage">
+      <canvas id="resetWave" width="900" height="300" aria-hidden="true"></canvas>
+      <div id="breathShape" class="breathShape" aria-hidden="true"></div>
+      <p id="resetCue" role="status" aria-live="polite">Get comfortable</p>
+    </div>
+    <p id="resetCount" class="muted"></p>
+    <p id="resetPulse"></p>
+    <div class="row">
+      <button id="resetDoneBtn">Back</button>
+      <button id="resetCamBtn" class="secondary" hidden>Show my breathing (turns the camera on)</button>
+    </div>
+    <p id="resetCamNote" class="muted" hidden>Your breathing line appears faintly behind the circle once the camera is ready, which can take about a minute.</p>
+  </section>
+
+  <!-- Support -->
+  <section id="support" class="card" hidden>
+    <h1>Need to talk to someone?</h1>
+    <div id="supportCalm" hidden>
+      <p>Tough practice tests are common, and one test does not define you.</p>
+      <p>If things feel like a lot right now, it can help to talk to someone: a friend, someone in your family, a teacher, or one of the free services below.</p>
+    </div>
+    <ul class="support">
+      <li><strong>India: Tele-MANAS</strong>, free, 24x7, in many Indian languages. Call <a class="tel" href="tel:14416">14416</a> or <a class="tel" href="tel:1-800-891-4416">1-800-891-4416</a>.</li>
+      <li><strong>Outside India:</strong> findahelpline.com lists free helplines by country.</li>
+    </ul>
+    <p><strong>If you feel unsafe right now, contact local emergency services.</strong></p>
+    <div class="row">
+      <button id="supportReportBtn" hidden>Continue to my report</button>
+      <button id="supportBackBtn" class="secondary">Back</button>
     </div>
   </section>
 
@@ -327,6 +399,8 @@
       <button id="backBtn" class="secondary">Back</button>
     </div>
     <p id="deleteMsg" role="status"></p>
+    <h2>Support</h2>
+    <p><button class="link supportLink">Need to talk to someone?</button></p>
   </section>
 </main>
 <script src="report-view.js"></script>

@@ -6,7 +6,7 @@
 (() => {
   const NS = 'http://www.w3.org/2000/svg';
   const C = { pulse: '#0072B2', tint: 'rgba(0,114,178,0.16)', breath: '#009E73', base: '#33405a', grid: '#dfe3ea',
-    bandA: '#f4f6fa', bandB: '#ffffff', sel: '#0072B2', changed: '#E69F00', marked: '#CC79A7', skipped: '#5b6475', hatch: '#8a94a6' };
+    bandA: '#f4f6fa', bandB: '#ffffff', sel: '#0072B2', changed: '#E69F00', marked: '#CC79A7', skipped: '#5b6475', hatch: '#8a94a6', reset: 'rgba(86,180,233,0.28)', resetLine: '#56B4E9' };
   const W = 1000;
   const L = 64;
   const R = 16;
@@ -79,6 +79,11 @@
         fill: g.kind === 'resettling' ? '#f3f4f7' : `url(#hatch-${id})`, opacity: g.kind === 'resettling' ? 0.9 : 0.85, class: 'gap' }, svg);
       if (g.kind === 'resettling') r.setAttribute('stroke', C.hatch), r.setAttribute('stroke-dasharray', '3 3');
       title(r, `${g.label} (${secs(g.end - g.start)})`);
+    }
+    for (const b of tl.resets || []) {
+      const r = svgEl('rect', { x: x(b.start), y: top, width: Math.max(2, x(b.end) - x(b.start)), height: height - top - bottom, fill: C.reset, stroke: C.resetLine, class: 'resetBand' }, svg);
+      title(r, `30-second reset at ${mmss(b.start)} (${secs(b.end - b.start)})`);
+      if (labels) svgEl('text', { x: (x(b.start) + x(b.end)) / 2, y: top + 30, 'text-anchor': 'middle', class: 'bandLabel' }, svg).textContent = 'reset';
     }
     draw({ svg, x, y, defs: d });
     if (xAxis) {
@@ -220,5 +225,39 @@
     els.resetBtn.onclick = onReset;
   }
 
-  window.ReportView = { render };
+  // "Your progress": one small chart and one plain line per measure, oldest first.
+  // Values only, no trend labels, arrows, or colour for direction.
+  function progress(container, sessions) {
+    const rows = [
+      { name: 'Score', get: (s) => s.score?.correct, text: (v, s) => `${v}/${s.score.total}` },
+      { name: 'Median rise on hard questions', get: (s) => s.summary?.hardMedianChange, text: (v) => signed(v) },
+      { name: 'Settle time after your biggest rise', get: (s) => (s.summary?.biggestRiseSettleMs == null ? null : s.summary.biggestRiseSettleMs), text: (v) => mmss(Math.round(v / 5000) * 5000) },
+      { name: 'Share of questions measured', get: (s) => (s.summary?.measuredShare == null ? null : Math.round(s.summary.measuredShare * 100)), text: (v) => `${v}%` },
+    ];
+    for (const r of rows) {
+      const vals = sessions.map((s) => { const v = r.get(s); return Number.isFinite(v) ? v : null; });
+      const words = vals.map((v, i) => (v == null ? 'not enough data' : r.text(v, sessions[i]))).join(', ');
+      const box = el('div', null, 'prog');
+      box.append(el('p', `${r.name}: ${words}.`));
+      const w = 220;
+      const h = 56;
+      const svg = svgEl('svg', { viewBox: `0 0 ${w} ${h}`, width: w, height: h, 'aria-hidden': 'true' });
+      const nums = vals.filter((v) => v != null);
+      if (nums.length) {
+        const lo = Math.min(...nums);
+        const span = Math.max(...nums) - lo || 1;
+        const px = (i) => 8 + (i / Math.max(1, vals.length - 1)) * (w - 16);
+        const py = (v) => h - 8 - ((v - lo) / span) * (h - 16);
+        let d = '';
+        vals.forEach((v, i) => { if (v == null) { d += ' '; return; } d += `${/[\d.]$/.test(d) ? 'L' : 'M'}${px(i).toFixed(1)},${py(v).toFixed(1)}`; });
+        svgEl('path', { d, fill: 'none', stroke: C.pulse, 'stroke-width': 2 }, svg);
+        vals.forEach((v, i) => { if (v != null) svgEl('circle', { cx: px(i), cy: py(v), r: 3.5, fill: C.pulse }, svg); });
+      }
+      box.append(svg);
+      container.append(box);
+    }
+    container.append(el('p', `Oldest first, ${sessions.length} practice tests. Each value is compared with your own calm baseline on that day.`, 'muted'));
+  }
+
+  window.ReportView = { render, progress };
 })();

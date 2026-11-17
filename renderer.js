@@ -3,9 +3,9 @@
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const WAVE_WINDOW_US = 20e6; // sample timestamps are epoch microseconds
-const SCREENS = ['consent', 'home', 'calibrate', 'ready', 'test', 'report', 'settings'];
+const SCREENS = ['consent', 'home', 'calibrate', 'ready', 'test', 'checkin', 'report', 'reset', 'support', 'settings'];
 
-let info = { simulated: false, test: { defaultMinutes: 10, quickDemoMinutes: 4 } };
+let info = { simulated: false, test: { defaultMinutes: 10, quickDemoMinutes: 4 }, reset: { inhaleSeconds: 4, exhaleSeconds: 6, cycles: 3 } };
 let consentGiven = false; // asked again on every launch, never stored
 let afterConsent = null;
 let baseline = null;
@@ -161,7 +161,7 @@ async function startTest() {
 function tickCountdown() {
   if (!T) return;
   const left = T.endsAt - Date.now();
-  $('countdown').textContent = mmss(left);
+  $('countdown').textContent = $('resetTimeLeft').textContent = mmss(left);
   if (left <= 0) finishTest('time_up');
 }
 
@@ -245,11 +245,158 @@ async function finishTest(reason) {
   if (!T) return;
   clearInterval(T.timer);
   T = null;
-  showEnd(await window.vitals.endTest(reason));
+  await closeReset();
+  showCheckin(await window.vitals.endTest(reason));
 }
 
 // Main also ends the test when time is up, in case the window missed it.
-window.vitals.on('test:ended', (r) => { if (T) { clearInterval(T.timer); T = null; showEnd(r); } });
+window.vitals.on('test:ended', async (r) => { if (T) { clearInterval(T.timer); T = null; await closeReset(); showCheckin(r); } });
+
+$('testResetBtn').addEventListener('click', () => openReset('test'));
+
+// ---------- How did that test feel? (optional, after submitting) ----------
+
+let savedReport = null; // the saved session's report, once main has written it
+let saveError = null;
+
+function showCheckin(r) {
+  if (!r) return;
+  endResult = r;
+  savedReport = null;
+  saveError = null;
+  show('checkin');
+}
+
+function continueToReport() {
+  if (savedReport) return showReport(savedReport);
+  showEnd(endResult);
+  if (saveError) $('rPending').textContent = saveError;
+}
+
+// The support screen follows ONLY from the student's own answer here. Nothing
+// measured (pulse, breathing, HRV) can open it; see lib/checkin.js and CLAUDE.md.
+for (const b of $$('#checkin [data-feeling]')) {
+  b.addEventListener('click', async () => {
+    const res = await window.vitals.checkin(b.dataset.feeling);
+    if (res?.report) savedReport = res.report;
+    if (res?.showSupport) return openSupport('postTest');
+    continueToReport();
+  });
+}
+
+// ---------- Support ----------
+
+let supportBack = 'home';
+
+function openSupport(from) {
+  supportBack = from;
+  $('supportCalm').hidden = from !== 'postTest';
+  $('supportReportBtn').hidden = from !== 'postTest';
+  $('supportBackBtn').textContent = from === 'postTest' ? 'Go to home' : 'Back';
+  show('support');
+}
+
+for (const b of $$('.supportLink')) b.addEventListener('click', () => openSupport(current === 'settings' ? 'settings' : 'home'));
+$('supportReportBtn').addEventListener('click', continueToReport);
+$('supportBackBtn').addEventListener('click', () => {
+  if (supportBack === 'settings') return $('settingsBtn').click();
+  endResult = null;
+  goHome();
+});
+// Phone numbers open the phone app (main checks the number); no website ever opens.
+for (const a of $$('a.tel')) a.addEventListener('click', (e) => { e.preventDefault(); window.vitals.call(a.getAttribute('href')); });
+
+// ---------- 30-second reset ----------
+
+let R = null; // { from, inTest, timer, ended, startedCamera }
+
+async function openReset(from) {
+  if (R) return;
+  const res = await window.vitals.resetStart();
+  R = { from, inTest: res.inTest, timer: null, ended: false, startedCamera: false };
+  $('resetTestNote').hidden = !res.inTest;
+  $('resetCamBtn').hidden = res.camera;
+  $('resetCamNote').hidden = true;
+  $('resetPulse').textContent = '';
+  $('resetDoneBtn').textContent = res.inTest ? 'Back to the test' : 'Back';
+  wave = [];
+  drawWave('resetWave', 0.6);
+  show('reset');
+  runDrill();
+}
+
+// Paced breathing: inhale, exhale, a few cycles. No score, nothing to get right.
+// With reduced motion the circle is replaced by a text countdown.
+function runDrill() {
+  const { inhaleSeconds, exhaleSeconds, cycles } = info.reset;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const shape = $('breathShape');
+  shape.hidden = reduced;
+  shape.style.transitionDuration = '0s';
+  shape.style.transform = 'scale(0.45)';
+  const phases = [];
+  for (let c = 0; c < cycles; c++) phases.push(['in', inhaleSeconds, c], ['out', exhaleSeconds, c]);
+  let i = 0;
+  let left = phases[0][1];
+  const render = (fresh) => {
+    const [kind, secs, c] = phases[i];
+    if (fresh) {
+      $('resetCue').textContent = kind === 'in' ? 'Breathe in' : 'Breathe out';
+      requestAnimationFrame(() => { shape.style.transitionDuration = `${secs}s`; shape.style.transform = kind === 'in' ? 'scale(1)' : 'scale(0.45)'; });
+    }
+    $('resetCount').textContent = `${reduced ? `${left}... ` : ''}Breath ${c + 1} of ${cycles}`;
+  };
+  render(true);
+  R.timer = setInterval(() => {
+    left--;
+    if (left > 0) return render(false);
+    i++;
+    if (i >= phases.length) return endDrill();
+    left = phases[i][1];
+    render(true);
+  }, 1000);
+}
+
+async function endDrill() {
+  if (!R || R.ended) return;
+  clearInterval(R.timer);
+  R.ended = true;
+  $('resetCue').textContent = 'Done';
+  $('resetCount').textContent = '';
+  const res = await window.vitals.resetEnd();
+  // One neutral line, only with enough data, and never during a test (no numbers there).
+  if (R && !R.inTest && res?.pulseLine) $('resetPulse').textContent = res.pulseLine;
+}
+
+// Leaving early is fine; the end is recorded either way.
+async function closeReset() {
+  if (!R) return;
+  await endDrill();
+  const r = R;
+  R = null;
+  if (r.startedCamera) await stopCamera();
+  return r;
+}
+
+$('resetDoneBtn').addEventListener('click', async () => {
+  const r = await closeReset();
+  if (!r) return;
+  if (r.inTest && T) return show('test');
+  if (r.from === 'report' && reportShown) return show('report');
+  goHome();
+});
+
+$('resetCamBtn').addEventListener('click', () => withConsent(async () => {
+  show('reset');
+  if (!R) return;
+  const res = await window.vitals.start();
+  if (!res.ok) { $('resetCamNote').hidden = false; $('resetCamNote').textContent = res.message; return; }
+  R.startedCamera = true;
+  $('resetCamBtn').hidden = true;
+  $('resetCamNote').hidden = false;
+}));
+
+$('homeResetBtn').addEventListener('click', () => openReset('home'));
 
 // ---------- Report: Your pressure map ----------
 
@@ -264,7 +411,7 @@ function reportHeader({ score, durationMs }) {
 
 // Right after the test: score and time; the rest once the session is saved.
 function showEnd(r) {
-  if (!r || (current === 'report' && endResult)) return;
+  if (!r) return;
   endResult = r;
   reportShown = null;
   reportHeader(r);
@@ -281,6 +428,8 @@ function showReport(report) {
   reportHeader({ score: report.header.score, durationMs: report.header.durationMs });
   const h = report.header;
   $('rMeasured').textContent = `${h.measuredFully} of ${h.questionCount} questions fully`;
+  $('rSaid').hidden = !report.selfReport;
+  $('rSaid').textContent = report.selfReport ? `You said: ${report.selfReport}` : '';
   $('rPending').hidden = true;
   $('reportSim').hidden = !report.simulated || info.simulated; // the top banner already says it in a simulated replay
   $('reportMsg').textContent = '';
@@ -291,16 +440,17 @@ function showReport(report) {
     chartCard: $('rChartCard'), pulseChart: $('rPulseChart'), breathChart: $('rBreathChart'), tip: $('rTip'),
     pulseSummary: $('pulse-sum'), breathSummary: $('breath-sum'), strip: $('rStrip'), obs: $('rObs'), closing: $('rClosing'),
     extras: $('rExtras'), resetBtn: $('resetBtn'),
-  }, { onReset: () => { $('reportMsg').textContent = 'The 30-second reset is coming in the next step.'; } });
+  }, { onReset: () => openReset('report') });
 }
 
 window.vitals.on('test:saved', (s) => {
   if (!endResult) return;
-  if (!s.ok) { $('rPending').textContent = s.message; return; }
-  showReport(s.report);
+  if (!s.ok) { saveError = s.message; if (current === 'report') $('rPending').textContent = s.message; return; }
+  savedReport = s.report;
+  if (current === 'report') showReport(s.report);
 });
 
-$('reportHomeBtn').addEventListener('click', () => { endResult = null; reportShown = null; goHome(); });
+$('reportHomeBtn').addEventListener('click', () => { endResult = null; reportShown = null; savedReport = null; goHome(); });
 
 $('pdfBtn').addEventListener('click', async () => {
   if (!reportShown) return;
@@ -329,9 +479,34 @@ async function renderPast() {
       endResult = null;
       showReport(r.report);
     });
-    li.append(b);
+    const del = el('button', 'Delete', 'link');
+    del.setAttribute('aria-label', `Delete the practice test from ${formatDate(s.startedAt)}`);
+    del.addEventListener('click', async () => {
+      if (!confirm(`Delete the practice test from ${formatDate(s.startedAt)}? This removes its answers and measurements from this computer and cannot be undone.`)) return;
+      await window.vitals.deleteSession(s.file);
+      renderPast();
+    });
+    li.append(b, del);
     return li;
   }));
+  renderProgress(list);
+}
+
+// Real sessions only; simulated ones are never mixed in (shown apart, in a simulated replay only).
+function renderProgress(list) {
+  const body = $('progressBody');
+  const real = list.filter((s) => !s.simulated).reverse();
+  const sim = list.filter((s) => s.simulated).reverse();
+  $('progressBox').hidden = false;
+  body.replaceChildren();
+  if (real.length >= 3) window.ReportView.progress(body, real);
+  else body.append(el('p', 'Take 3 practice tests to see your patterns.'));
+  if (info.simulated && sim.length >= 3) {
+    body.append(el('h3', 'Simulated sessions (dev only, made-up data)'));
+    const box = el('div');
+    window.ReportView.progress(box, sim);
+    body.append(box);
+  }
 }
 
 // ---------- Live data on the calibration screen ----------
@@ -347,20 +522,23 @@ function showRate(id, note, unit, s) {
 }
 
 window.vitals.on('vitals:metrics', ({ pulse, breathing, trace }) => {
-  if (current !== 'calibrate') return; // no numbers anywhere else, especially not during the test
-  showRate('pulse', 'pulseNote', 'beats per minute', pulse);
-  showRate('breathing', 'breathNote', 'breaths per minute', breathing);
+  if (current !== 'calibrate' && current !== 'reset') return; // no numbers anywhere else, especially not during the test
+  if (current === 'calibrate') {
+    showRate('pulse', 'pulseNote', 'beats per minute', pulse);
+    showRate('breathing', 'breathNote', 'breaths per minute', breathing);
+  }
   const lastTs = wave.length ? wave[wave.length - 1][0] : -Infinity;
   for (const p of trace || []) if (p[0] > lastTs) wave.push(p);
   if (wave.length) {
     const cutoff = wave[wave.length - 1][0] - WAVE_WINDOW_US;
     while (wave.length && wave[0][0] < cutoff) wave.shift();
   }
-  drawWave();
+  if (current === 'calibrate') drawWave('wave', 2);
+  else drawWave('resetWave', 3);
 });
 
-function drawWave() {
-  const c = $('wave');
+function drawWave(id, width) {
+  const c = $(id);
   const g = c.getContext('2d');
   g.clearRect(0, 0, c.width, c.height);
   if (wave.length < 2) return;
@@ -369,7 +547,7 @@ function drawWave() {
   const span = Math.max(...vals) - min || 1;
   const t1 = wave[wave.length - 1][0];
   g.strokeStyle = '#2f5bd3';
-  g.lineWidth = 2;
+  g.lineWidth = width;
   g.beginPath();
   wave.forEach(([t, v], i) => {
     const x = c.width - ((t1 - t) / WAVE_WINDOW_US) * c.width;

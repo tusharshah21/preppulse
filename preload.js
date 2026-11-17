@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('vitals', {
   listSessions: () => ipcRenderer.invoke('sessions:list'),
   openSession: (file) => ipcRenderer.invoke('sessions:open', file),
   saveReportPdf: (startedAt) => ipcRenderer.invoke('report:pdf', startedAt),
+  deleteSession: (file) => ipcRenderer.invoke('sessions:delete', file),
+  resetStart: () => ipcRenderer.invoke('reset:start'),
+  resetEnd: () => ipcRenderer.invoke('reset:end'),
+  checkin: (feeling) => ipcRenderer.invoke('test:checkin', feeling),
+  call: (url) => ipcRenderer.invoke('support:call', url),
   dataInfo: () => ipcRenderer.invoke('data:info'),
   deleteAllData: () => ipcRenderer.invoke('data:deleteAll'),
   on: (channel, cb) => {

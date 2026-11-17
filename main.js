@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog, shell } = require('electron');
 const CONFIG = require('./lib/config');
 const { startSession, stopSession, downscaleToRGBA, REQUESTED_METRICS } = require('./lib/vitals');
 const { createRecorder, loadRecording, play } = require('./lib/recording');
@@ -11,6 +11,8 @@ const { createCalibration, pausedHint } = require('./lib/calibration');
 const { loadQuestions, publicView } = require('./lib/questions');
 const { createTestSession } = require('./lib/session');
 const { buildReport } = require('./lib/report');
+const { resetPulseLine } = require('./lib/reset');
+const { isFeeling, selfReport, needsSupportScreen } = require('./lib/checkin');
 
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* missing .env is reported on start */ }
 
@@ -39,7 +41,10 @@ let ticker = null;
 let lastValidation = null; // { ok, code, hint }
 let lastStablePulseAt = -Infinity;
 let calibration = null;
-let test = null; // { session, timer, result, finalizeTimer }
+let test = null; // { session, timer, result, finalizeTimer, checkin }
+let recentPulse = []; // stable pulse [sample time ms epoch, bpm], last 2 minutes, for the reset line
+let reset = null; // { startMs, inTest }
+let lastSaved = null; // file name of the session saved last, for a late check-in answer
 
 const dataDir = () => path.join(app.getPath('userData'), 'preppulse-data');
 const baselineFile = () => path.join(dataDir(), 'baseline.json');
@@ -65,7 +70,11 @@ function emit(channel, data) {
     calibration?.onError(t, data);
     test?.session.onError(t, data);
   } else if (channel === 'vitals:metrics') {
-    if (data.pulse?.stable) lastStablePulseAt = t;
+    if (data.pulse?.stable) {
+      lastStablePulseAt = t;
+      recentPulse.push([data.pulse.timestamp / 1000, data.pulse.value]);
+      recentPulse = recentPulse.filter(([ts]) => ts > t - 120000);
+    }
     calibration?.onMetrics(t, data);
     test?.session.onMetrics(t, data);
   }
@@ -102,6 +111,7 @@ async function start() {
   if (running()) return { ok: true };
   lastValidation = null;
   lastStablePulseAt = -Infinity;
+  recentPulse = [];
   if (REPLAY) {
     if (!replayRec) return { ok: false, message: `Could not replay ${path.basename(REPLAY)}: ${replayError}` };
     stopReplay = play(replayRec, emit);
@@ -229,12 +239,52 @@ async function finalizeTest() {
   try {
     fs.mkdirSync(sessionsDir(), { recursive: true });
     const file = path.join(sessionsDir(), `${full.startedAt.replace(/[:.]/g, '-')}.json`);
+    if (t.checkin) full.selfReport = t.checkin;
     fs.writeFileSync(file, JSON.stringify(full));
+    lastSaved = path.basename(file);
     send('test:saved', { ok: true, file: path.basename(file), report: buildReport(full) });
   } catch (e) {
     send('test:saved', { ok: false, message: `Could not save the session: ${e.message}` });
   }
   await stop();
+}
+
+// ---------- 30-second reset ----------
+
+// During a test the timer keeps running; the reset is recorded as two events.
+function resetStart() {
+  const inTest = !!test && !test.result;
+  reset = { startMs: Date.now(), inTest };
+  if (inTest) test.session.event(reset.startMs, { type: 'reset_start' });
+  return { ok: true, inTest, camera: running() };
+}
+
+function resetEnd() {
+  if (!reset) return { ok: false };
+  const r = reset;
+  reset = null;
+  const now = Date.now();
+  if (r.inTest && test && !test.result) test.session.event(now, { type: 'reset_end' });
+  return { ok: true, pulseLine: resetPulseLine(recentPulse, readBaseline()?.pulseBpm, r.startMs, now) };
+}
+
+// ---------- Self check-in ----------
+
+// The support screen follows ONLY from the student's own answer (lib/checkin.js).
+function checkin(feeling) {
+  if (!isFeeling(feeling)) return { ok: false };
+  const sr = selfReport(feeling);
+  const out = { ok: true, showSupport: needsSupportScreen(feeling) };
+  if (test?.result) { test.checkin = sr; return out; } // saved with the session in a few seconds
+  if (!lastSaved) return out;
+  try {
+    const file = path.join(sessionsDir(), lastSaved);
+    const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+    s.selfReport = sr;
+    fs.writeFileSync(file, JSON.stringify(s));
+    out.report = buildReport(s);
+  } catch { /* deleted meanwhile: nothing to update */ }
+  return out;
 }
 
 function discardTest() {
@@ -255,7 +305,7 @@ function listSessions() {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(sessionsDir(), file), 'utf8'));
       if (s.format !== 'preppulse-session/1') continue;
-      out.push({ file, startedAt: s.startedAt, minutes: s.settings?.minutes, score: s.score, simulated: !!s.source?.simulated });
+      out.push({ file, startedAt: s.startedAt, minutes: s.settings?.minutes, score: s.score, simulated: !!s.source?.simulated, summary: buildReport(s).summary });
     } catch { /* unreadable file: skip */ }
   }
   return out.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
@@ -272,6 +322,17 @@ function openSession(file) {
     return { ok: false, message: `Could not open that session: ${e.message}` };
   }
 }
+
+function deleteSession(file) {
+  if (typeof file !== 'string' || !SESSION_FILE.test(file)) return false;
+  fs.rmSync(path.join(sessionsDir(), file), { force: true });
+  if (lastSaved === file) lastSaved = null;
+  return true;
+}
+
+// Phone numbers on the support screen; nothing else leaves the app.
+const TEL = /^tel:[0-9-]{3,20}$/;
+const callNumber = (url) => { if (typeof url === 'string' && TEL.test(url)) shell.openExternal(url); };
 
 // Saves only where the student picks in the save dialog; nothing is written otherwise.
 async function saveReportPdf(startedAt) {
@@ -297,6 +358,7 @@ async function deleteAllData() {
   discardTest();
   await stop();
   fs.rmSync(dataDir(), { recursive: true, force: true }); // baseline.json and sessions/
+  lastSaved = null;
   await session.defaultSession.clearStorageData();
   await session.defaultSession.clearCache();
   return true;
@@ -318,13 +380,16 @@ app.whenReady().then(() => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.removeMenu();
+  // The window never navigates or opens pages; tel: links go to the phone app.
+  win.webContents.on('will-navigate', (e, url) => { e.preventDefault(); callNumber(url); });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.loadFile('index.html');
 
   const handle = (channel, fn) => ipcMain.handle(channel, (e, arg) => {
     if (!win || e.sender !== win.webContents) throw new Error('denied');
     return fn(arg);
   });
-  handle('app:info', () => ({ mode: MODE, simulated: SIMULATED, test: { defaultMinutes: CONFIG.test.defaultMinutes, quickDemoMinutes: CONFIG.test.quickDemoMinutes } }));
+  handle('app:info', () => ({ mode: MODE, simulated: SIMULATED, test: { defaultMinutes: CONFIG.test.defaultMinutes, quickDemoMinutes: CONFIG.test.quickDemoMinutes }, reset: CONFIG.reset }));
   handle('vitals:start', start);
   handle('vitals:stop', () => { discardTest(); return stop(); });
   handle('vitals:preview', (on) => { previewOn = on === true && !!sdk; });
@@ -336,6 +401,11 @@ app.whenReady().then(() => {
   handle('test:end', (reason) => endTest(reason === 'time_up' ? 'time_up' : 'submitted'));
   handle('sessions:list', listSessions);
   handle('sessions:open', openSession);
+  handle('sessions:delete', deleteSession);
+  handle('reset:start', resetStart);
+  handle('reset:end', resetEnd);
+  handle('test:checkin', checkin);
+  handle('support:call', callNumber);
   handle('report:pdf', saveReportPdf);
   handle('data:info', dataInfo);
   handle('data:deleteAll', deleteAllData);

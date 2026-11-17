@@ -43,7 +43,7 @@ Placeholders, to be added from the live session (never from simulated data):
    npm install
    ```
 
-   This downloads the SDK's native runtimes for all four supported platforms (a few hundred MB; only the one for your platform is loaded) and runs Electron's install step, which downloads the Electron binary.
+   This downloads the SDK's native runtimes for all four supported platforms (about 340 MB; only the one for your platform is loaded) and runs Electron's install step, which downloads the Electron binary (about 360 MB). Expect about 750 MB in `node_modules` in total.
 4. Start:
 
    ```bash

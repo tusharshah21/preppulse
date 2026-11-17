@@ -47,12 +47,12 @@ $env:PREPPULSE_REPLAY = "data\recordings\simulated-test-session.json"; npm start
 
 ## How It Responds to Human Signals
 
-**The signals.** PrepPulse requests five metrics from `@smartspectra/node-sdk` 3.5.0 and uses three of them:
+**The signals.** PrepPulse uses pulse and breathing. It uses heart-rate variability only when the SDK provides it, and it did not appear in my live tests. It requests five metrics from `@smartspectra/node-sdk` 3.5.0:
 
 - **Pulse rate**, the main signal for the pressure map.
 - **Breathing rate**, compared by third of the test.
 - **The breathing trace** (the chest waveform), drawn live during calibration and faintly behind the reset circle.
-- **Heart-rate variability, when available.** The report shows it by half of the test when there is enough of it. In my live webcam session the SDK produced no HRV readings at all (no errors, metric requested), so the app is built to work without it and says so plainly.
+- **Heart-rate variability, only when the SDK provides it.** If there are enough readings, the report adds it by half of the test. In my live webcam tests the SDK produced no HRV readings at all (metric requested, no errors), so the report left it out and the baseline said it was not available. Nothing else depends on it.
 
 The arterial pressure trace is requested only because the SDK delivers no pulse without it; its values are never used or shown. All SDK calls live in [`lib/vitals.js`](https://github.com/tusharshah21/preppulse/blob/main/lib/vitals.js); [`main.js`](https://github.com/tusharshah21/preppulse/blob/main/main.js) starts and stops sessions and stamps every event; [`lib/calibration.js`](https://github.com/tusharshah21/preppulse/blob/main/lib/calibration.js), [`lib/session.js`](https://github.com/tusharshah21/preppulse/blob/main/lib/session.js) and [`lib/report.js`](https://github.com/tusharshah21/preppulse/blob/main/lib/report.js) turn the numbers into a baseline, a test session and a report.
 

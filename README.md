@@ -93,12 +93,12 @@ The demo video uses the live webcam, measured with the SmartSpectra SDK on this 
 
 PrepPulse uses `@smartspectra/node-sdk` 3.5.0 in Electron's main process, with the SDK's native camera capture (`useCamera`). The window never gets the API key and has no Node access.
 
-Signals used (requested metrics `[0, 2, 15, 16, 17]`):
+PrepPulse uses pulse and breathing. It uses heart-rate variability only when the SDK provides it, which did not happen in our live tests. Signals used (requested metrics `[0, 2, 15, 16, 17]`):
 
 - **Pulse rate** (`PULSE_RATE`): the main signal for the pressure map, as change from your calm baseline per question.
 - **Breathing rate** (`BREATHING_RATE`): by third of the test.
 - **Breathing trace** (`CHEST_BREATHING`, the chest waveform): drawn live during calibration and faintly behind the 30-second reset.
-- **Heart-rate variability, when available** (`HRV`, RMSSD): by half of the test, only when the SDK produced enough readings. In our live webcam run (312 s of camera, metric 17 requested, no SDK errors) the SDK produced no HRV readings at all, so expect the report and baseline to say it was not available. The rest of the app does not depend on it.
+- **Heart-rate variability, only when the SDK provides it** (`HRV`, RMSSD): by half of the test, only when the SDK produced enough readings. It did not appear in our live tests (312 s of camera, metric 17 requested, no SDK errors, zero HRV readings), so expect the report to leave it out and the baseline to say it was not available. Nothing else in the app depends on it.
 - `ARTERIAL_PRESSURE_TRACE` is requested only because the SDK delivers no pulse without it. Its values are not used or shown.
 
 Facial expressions (`EXPRESSIONS`) and face landmarks (`FACE_LANDMARKS`) are deliberately never requested. Expression labels such as fear or anger are judgements about a person's state of mind, and PrepPulse only describes what the body did, never why or what it means. Landmarks are face geometry the app has no use for.
@@ -114,7 +114,7 @@ Where the SDK code lives:
 
 **Consent first.** The camera turns on only after you press "I agree, start camera" on the consent screen, in this run of the app. Consent is not remembered; it is asked again every time the app starts. There is no background or hidden monitoring: the camera is on only during calibration, a test, or a reset where you chose "Show my breathing", and it turns off afterwards.
 
-**What is measured.** Pulse, breathing rate, the breathing waveform and heart-rate variability (when available), read by the SDK from small colour changes in your skin and small movements of your chest in the camera image.
+**What is measured.** Pulse, breathing rate and the breathing waveform, read by the SDK from small colour changes in your skin and small movements of your chest in the camera image. Heart-rate variability is used only when the SDK provides it; it did not appear in our live tests.
 
 **On your device.** Video is processed on your computer. PrepPulse never saves any video frame or image: not to disk, not in a recording, not in a log. No face images are kept. The small camera preview during calibration is kept in memory only, for display, and can be hidden.
 

@@ -30,9 +30,11 @@ It is a desktop app (Electron and Node), it runs entirely on your machine, and i
 
 Every screenshot below is from a live webcam session, measured with the SmartSpectra SDK. None of them use simulated data.
 
-**[SCREENSHOT: calibration, learning your calm baseline, with the live pulse and breathing trace]**
+![Calibration, learning the calm baseline: the camera preview is hidden, pulse and breathing each at 25 of 60 calm seconds, a pulse of 58 and breathing of 11, and the live breathing waveform below](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/screenshot-calibration.png)
+*Learning my calm baseline in a live session, with the camera preview hidden. Measurement keeps running without it.*
 
-**[SCREENSHOT: the mock test screen, with the reset button in the header]**
+![The mock test screen: question 3 of 12, four options, a question palette, "Measuring" and "Take a 30-second reset" in the header, and 3:54 left](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/screenshot-test.png)
+*The test screen during a live session: "Measuring" and the reset button sit in the header, next to the timer.*
 
 ![Your pressure map from a live 3-minute test: score 12 of 12, the pulse line against the calm baseline with question bands and hatched gaps where it was not measured, the breathing rate, a strip of per-question values marked brief, and three observations](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/screenshot-pressure-map.png)
 *Your pressure map from my live session: pulse and breathing against my calm baseline, question by question, with the gaps where the camera could not measure.*

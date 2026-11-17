@@ -1,7 +1,9 @@
 {
   "name": "preppulse",
   "version": "0.1.0",
-  "description": "Mock-test practice with on-device pulse and breathing feedback",
+  "description": "Practice exams with a camera-based pressure map: how your pulse and breathing respond, question by question, compared with your own baseline. Not a medical device.",
+  "license": "MIT",
+  "repository": "https://github.com/tusharshah21/preppulse",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

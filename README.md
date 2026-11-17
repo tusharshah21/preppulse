@@ -79,6 +79,7 @@ Everything you see in replay mode is simulated data, not a measurement of anyone
 ## Demo
 
 The demo video uses the live webcam, measured with the SmartSpectra SDK on this laptop, with the camera preview hidden throughout (measurement keeps running without it). Nothing in it comes from simulated data or a recorded video.
+
 ## Troubleshooting
 
 - **The app exits immediately with no window.** Your shell has `ELECTRON_RUN_AS_NODE` set (VS Code's terminal and some other Electron-based terminals do this). Clear it and start again: `set ELECTRON_RUN_AS_NODE=` in cmd, `Remove-Item Env:ELECTRON_RUN_AS_NODE` in PowerShell, or `unset ELECTRON_RUN_AS_NODE` in Git Bash.

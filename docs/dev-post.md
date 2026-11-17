@@ -34,7 +34,8 @@ Every screenshot below is from a live webcam session, measured with the SmartSpe
 
 **[SCREENSHOT: the mock test screen, with the reset button in the header]**
 
-**[SCREENSHOT: your pressure map, with the pulse timeline, question strip and observations]**
+![Your pressure map from a live 3-minute test: score 12 of 12, the pulse line against the calm baseline with question bands and hatched gaps where it was not measured, the breathing rate, a strip of per-question values marked brief, and three observations](https://raw.githubusercontent.com/tusharshah21/preppulse/main/docs/media/screenshot-pressure-map.png)
+*Your pressure map from my live session: pulse and breathing against my calm baseline, question by question, with the gaps where the camera could not measure.*
 
 **[SCREENSHOT: the 30-second reset, with the live breathing trace behind the circle]**
 

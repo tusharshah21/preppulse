@@ -20,7 +20,7 @@ It is a desktop app (Electron and Node), it runs entirely on your machine, and i
 
 ## Demo
 
-🎬 **[Watch the demo video (Google Drive, 2:10)](https://drive.google.com/drive/folders/1O3kKx1x6m0sFyOJsUL-k-YBtP2SxJCVk?usp=sharing)**
+🎬 **[Watch the demo video (Google Drive, 2:10)](https://drive.google.com/file/d/1xBHZ-OuMBPesh_y7mAiNHihM2SqHmBaL/view)**
 
 **The idea in 60 seconds.** The video opens with a short hand-drawn explainer with a voice-over. It is a sketch of the idea, not the app's screens, and the numbers on its pressure map are examples. After it come the real app's screens: consent, home, calibration, the mock test and a pressure map, with data from live webcam sessions.
 
@@ -36,8 +36,6 @@ Every screenshot below is from a live webcam session, measured with the SmartSpe
 
 ![Your pressure map from a live 3-minute test: score 12 of 12, the pulse line against the calm baseline with question bands and hatched gaps where it was not measured, the breathing rate, a strip of per-question values marked brief, and three observations](https://cdn.jsdelivr.net/gh/tusharshah21/preppulse@86d004c/docs/media/screenshot-pressure-map.png)
 *Your pressure map from my live session: pulse and breathing against my calm baseline, question by question, with the gaps where the camera could not measure.*
-
-**[SCREENSHOT: the 30-second reset, with the live breathing trace behind the circle]**
 
 ## Code
 
@@ -118,9 +116,7 @@ It keeps everything on the student's own computer, compares them only with thems
 
 ## Agent Session
 
-I built PrepPulse with Claude Code. A curated agent session showing how it came together, including the live-run analysis and retuning, will be embedded here.
-
-**[AGENT SESSION EMBED: replace this line with the agent_session tag once the session is saved]**
+I built PrepPulse with Claude Code.
 
 ---
 

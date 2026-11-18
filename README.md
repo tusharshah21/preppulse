@@ -8,9 +8,9 @@ Built for the Presage SmartSpectra SDK Challenge on DEV.
 
 ## Demo
 
-[![PrepPulse demo video: a hand-drawn page of notes about the app, click to watch](docs/media/explainer-poster.jpg)](https://drive.google.com/file/d/1xBHZ-OuMBPesh_y7mAiNHihM2SqHmBaL/view)
+[![PrepPulse demo video: a hand-drawn page of notes about the app, click to watch](docs/media/explainer-poster.jpg)](https://drive.google.com/file/d/1HDlP3ThuLER15yxSrgaAixZgFv7g1ZJL/view)
 
-**[Watch the demo video](https://drive.google.com/file/d/1xBHZ-OuMBPesh_y7mAiNHihM2SqHmBaL/view)** (2:10, Google Drive). It opens with a 60-second hand-drawn explainer; its drawings and numbers are examples, not the app's screens. The calibration and mock-test footage is a real-time screen recording with the live webcam (camera preview hidden); the pressure map opens a saved live session from the app's past tests.
+**[Watch the demo video](https://drive.google.com/file/d/1HDlP3ThuLER15yxSrgaAixZgFv7g1ZJL/view)** (2:42, Google Drive). It opens with a 60-second hand-drawn explainer; its drawings and numbers are examples, not the app's screens. The calibration and mock-test footage is a real-time screen recording with the live webcam (camera preview hidden); the pressure map opens a saved live session from the app's past tests.
 
 ## Screenshots
 

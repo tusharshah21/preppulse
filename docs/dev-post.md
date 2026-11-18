@@ -16,6 +16,15 @@ The numbers around student wellbeing in India are hard to read. NCRB data shows 
 
 PrepPulse does not try to solve any of that, and it does not detect anything about anyone. It works on something smaller. School counsellors already teach students breathing techniques for exam days, but a technique learned in a calm room is hard to use in the exam hall. PrepPulse is a place to practise it under realistic conditions: you take a timed mock test, the webcam measures your pulse and breathing on your own computer with the SmartSpectra SDK, and afterwards you see how your body responded, question by question, compared only with your own calm baseline. Mid-test, you can take a 30-second breathing reset and later see what your pulse did around it.
 
+### Why it's built this way
+
+- **Exams are the pressure students name most.** In NCERT's 2022 national survey of 3,79,842 students in classes 6 to 12, 81% named studies, exams and results as major causes of anxiety.
+- **Pressure costs marks, not just comfort.** In a study published in *Science*, students prone to test anxiety scored nearly one grade point higher on a high-stakes exam after ten minutes of writing about their worries first; the researchers' explanation is that worry takes up the working memory a test needs ([Ramirez and Beilock, 2011](https://news.uchicago.edu/story/writing-about-worries-eases-anxiety-and-improves-test-performance)).
+- **Practice tests help knowledge hold up under pressure.** People who learned by taking practice tests showed no stress-related drop in recall, while people who learned by re-reading did ([Smith, Floerke and Thomas, *Science*, 2016](https://www.sciencedaily.com/releases/2016/11/161124160426.htm)). That's why PrepPulse lives inside a mock test, not in a separate relaxation app.
+- **Slow breathing with a long exhale is a promising, low-cost tool.** In a randomised trial, five minutes a day of exhale-focused breathing improved mood and lowered breathing rate more than mindfulness meditation ([Balban et al., *Cell Reports Medicine*, 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC9873947/)), and a systematic review links slow breathing to higher heart-rate variability ([Zaccaro et al., 2018](https://www.frontiersin.org/articles/10.3389/fnhum.2018.00353/full)). PrepPulse's reset uses a longer exhale: 4 seconds in, 6 out.
+
+PrepPulse doesn't claim any of these effects for itself. It gives students a place to practise under test-like conditions and to see their own response.
+
 It is a desktop app (Electron and Node), it runs entirely on your machine, and it has no accounts.
 
 ## Demo

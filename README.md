@@ -6,6 +6,15 @@ PrepPulse is not a medical device. It does not diagnose anything and gives no me
 
 Built for the Presage SmartSpectra SDK Challenge on DEV.
 
+## Why it's built this way
+
+- **Exams are the pressure students name most.** In NCERT's 2022 national survey of 3,79,842 students in classes 6 to 12, 81% named studies, exams and results as major causes of anxiety.
+- **Pressure costs marks, not just comfort.** In a study published in *Science*, students prone to test anxiety scored nearly one grade point higher on a high-stakes exam after ten minutes of writing about their worries first; the researchers' explanation is that worry takes up the working memory a test needs ([Ramirez and Beilock, 2011](https://news.uchicago.edu/story/writing-about-worries-eases-anxiety-and-improves-test-performance)).
+- **Practice tests help knowledge hold up under pressure.** People who learned by taking practice tests showed no stress-related drop in recall, while people who learned by re-reading did ([Smith, Floerke and Thomas, *Science*, 2016](https://www.sciencedaily.com/releases/2016/11/161124160426.htm)). That's why PrepPulse lives inside a mock test, not in a separate relaxation app.
+- **Slow breathing with a long exhale is a promising, low-cost tool.** In a randomised trial, five minutes a day of exhale-focused breathing improved mood and lowered breathing rate more than mindfulness meditation ([Balban et al., *Cell Reports Medicine*, 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC9873947/)), and a systematic review links slow breathing to higher heart-rate variability ([Zaccaro et al., 2018](https://www.frontiersin.org/articles/10.3389/fnhum.2018.00353/full)). PrepPulse's reset uses a longer exhale: 4 seconds in, 6 out.
+
+PrepPulse doesn't claim any of these effects for itself. It gives students a place to practise under test-like conditions and to see their own response.
+
 ## Demo
 
 [![PrepPulse demo video: a hand-drawn page of notes about the app, click to watch](docs/media/explainer-poster.jpg)](https://drive.google.com/file/d/1HDlP3ThuLER15yxSrgaAixZgFv7g1ZJL/view)

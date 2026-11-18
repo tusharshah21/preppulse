@@ -6,18 +6,34 @@ PrepPulse is not a medical device. It does not diagnose anything and gives no me
 
 Built for the Presage SmartSpectra SDK Challenge on DEV.
 
+## Demo
+
+[![PrepPulse demo video: a hand-drawn page of notes about the app, click to watch](docs/media/explainer-poster.jpg)](https://drive.google.com/file/d/1xBHZ-OuMBPesh_y7mAiNHihM2SqHmBaL/view)
+
+**[Watch the demo video](https://drive.google.com/file/d/1xBHZ-OuMBPesh_y7mAiNHihM2SqHmBaL/view)** (2:10, Google Drive). It opens with a 60-second hand-drawn explainer; its drawings and numbers are examples, not the app's screens. Then come the app's real screens: consent, home, calibration, the mock test and a pressure map.
+
 ## Screenshots
 
-Placeholders, to be added from the live session (never from simulated data):
+From live webcam sessions measured with the SmartSpectra SDK, with the camera preview hidden. None of them use simulated data.
 
-- [ ] Consent screen ("Before we turn on your camera")
-- [ ] Calibration (learning your calm baseline)
-- [ ] Mock test screen
-- [ ] 30-second reset
-- [ ] "How did that test feel?" check-in
-- [ ] Your pressure map (pulse timeline, breathing, question strip, observations)
-- [ ] Your progress on the home screen
-- [ ] Support screen ("Need to talk to someone?")
+| Calibration | Mock test |
+|---|---|
+| ![Calibration: the preview is hidden, pulse and breathing each at 25 of 60 calm seconds, and the live breathing waveform](docs/media/screenshot-calibration.png) | ![The mock test: question 3 of 12, a question palette, "Measuring" and "Take a 30-second reset" in the header](docs/media/screenshot-test.png) |
+
+<details>
+<summary>Your pressure map (a full report from a live 3-minute test)</summary>
+
+![Your pressure map: score, the pulse line against the calm baseline with question bands and hatched gaps, the breathing rate, a per-question strip and three observations](docs/media/screenshot-pressure-map.png)
+
+</details>
+
+### The idea in three sketches
+
+From the explainer film. Simplified drawings, not the app's screens; the numbers are examples.
+
+| A personal baseline | Your pressure map | The 30-second reset |
+|---|---|---|
+| ![A wavy pulse line calms into a flat line labelled "your calm baseline"](docs/media/gif-baseline.gif) | ![A pulse line rises above the baseline around Q5 and settles back](docs/media/gif-pressure-map.gif) | ![A circle guides "in 4, out 6, x3", then a student in the exam hall with no app](docs/media/gif-reset.gif) |
 
 ## Requirements
 
@@ -75,10 +91,6 @@ $env:PREPPULSE_REPLAY = "data\recordings\simulated-test-session.json"; npm start
 (In PowerShell the variable stays set for that window; clear it with `Remove-Item Env:PREPPULSE_REPLAY`.)
 
 Everything you see in replay mode is simulated data, not a measurement of anyone. Every screen shows a "SIMULATED DATA" banner, and sessions and baselines made this way are marked simulated and are never mixed with real ones.
-
-## Demo
-
-The demo video uses the live webcam, measured with the SmartSpectra SDK on this laptop, with the camera preview hidden throughout (measurement keeps running without it). Nothing in it comes from simulated data or a recorded video.
 
 ## Troubleshooting
 
@@ -180,3 +192,4 @@ If practice tests feel like a lot, it can help to talk to someone.
 - The question bank (`questions/sample-test.json`) is original, written for PrepPulse, and not taken from any real exam paper.
 - Charts use the Okabe-Ito colour palette, chosen to be readable with colour-vision differences.
 - Built with [Electron](https://www.electronjs.org).
+- The explainer film and its sketches were made for PrepPulse. Hand-lettering: Patrick Hand and Kalam (SIL Open Font License). Voice-over: the [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) text-to-speech model (Apache 2.0).

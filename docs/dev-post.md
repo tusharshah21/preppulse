@@ -20,11 +20,9 @@ It is a desktop app (Electron and Node), it runs entirely on your machine, and i
 
 ## Demo
 
-🎬 **[Watch the demo video](PASTE_VIDEO_LINK_HERE)**
+🎬 **[Watch the demo video (Google Drive, 2:10)](https://drive.google.com/drive/folders/1O3kKx1x6m0sFyOJsUL-k-YBtP2SxJCVk?usp=sharing)**
 
-**The idea in 60 seconds.** Before the real app, a short hand-drawn explainer with a voice-over. It is a sketch of the idea, not the app's screens, and the numbers on its pressure map are examples.
-
-**[EXPLAINER FILM: YouTube link]**
+**The idea in 60 seconds.** The video opens with a short hand-drawn explainer with a voice-over. It is a sketch of the idea, not the app's screens, and the numbers on its pressure map are examples. After it come the real app's screens: consent, home, calibration, the mock test and a pressure map, with data from live webcam sessions.
 
 ![A hand-drawn page of notes: a student at a desk, the PrepPulse laptop, a calm baseline, a pressure map, a 30-second reset and five privacy ticks](https://cdn.jsdelivr.net/gh/tusharshah21/preppulse@86d004c/docs/media/explainer-poster.jpg)
 
